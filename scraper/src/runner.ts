@@ -1,17 +1,50 @@
 import type { PropertySource } from '@prisma/client';
 import { config } from './config.js';
-import { createApiContext, launchBrowser, sleep } from './browser.js';
+import { BrowserPool, createApiContext, sleep } from './browser.js';
 import { prisma } from './db.js';
 import { logger } from './logger.js';
-import { getParser, needsBrowser } from './parsers/index.js';
+import { getParser, mayNeedBrowser } from './parsers/index.js';
 import { deactivateStale, persistListings } from './persist.js';
-import { buildSearchTargets } from './targets.js';
-import type { Browser } from 'playwright-core';
+import { buildSearchTargets, describeTarget } from './targets.js';
+import type { Transport } from './http.js';
 import type { ScrapeContext } from './types.js';
 
 const log = logger('runner');
 
+export type SourceOutcome = {
+  source: PropertySource;
+  status: 'SUCCESS' | 'FAILED';
+  found: number;
+  created: number;
+  updated: number;
+  /** Error message, or the silent-zero note described below. */
+  note: string | null;
+};
+
+export type RunSummary = {
+  startedAt: Date;
+  finishedAt: Date;
+  durationMs: number;
+  targets: number;
+  outcomes: SourceOutcome[];
+};
+
 let running = false;
+let lastSummary: RunSummary | null = null;
+
+export const isRunning = () => running;
+export const getLastSummary = () => lastSummary;
+
+/**
+ * A source that answers 200 and hands back nothing is the failure mode this
+ * project's own comments warn about: it looks exactly like a quiet week on the
+ * market. The run is still recorded as SUCCESS — nothing errored — but the note
+ * lands in ScrapeRun.error so the dashboard can flag it, because zero listings
+ * for a whole city is a broken contract, not a market condition.
+ */
+const SILENT_ZERO_NOTE =
+  'completed without errors but returned 0 listings — the endpoint contract has probably changed. ' +
+  'Run `make doctor` to probe it.';
 
 /**
  * One full pass: build search targets from user preferences, run every enabled
@@ -20,28 +53,31 @@ let running = false;
  *
  * A failing source never aborts the others.
  */
-export async function runScrape(sources: PropertySource[] = config.sources): Promise<void> {
+export async function runScrape(sources: PropertySource[] = config.sources): Promise<RunSummary> {
   if (running) {
     log.warn('previous run still in progress — skipping this tick');
-    return;
+    throw new Error('A scrape run is already in progress');
   }
   running = true;
 
-  const startedAt = Date.now();
+  const startedAt = new Date();
   log.info(`starting run · sources=${sources.join(', ')}`);
 
-  let browser: Browser | null = null;
+  // Chromium is launched by the pool on first use, not here: an all-JSON run
+  // that is never challenged by a bot wall never pays the ~350MB.
+  const browsers = new BrowserPool();
   const api = await createApiContext();
+  const transports = new Map<string, Transport>();
+  const outcomes: SourceOutcome[] = [];
+  let targetCount = 0;
 
   try {
     const targets = await buildSearchTargets();
-    log.info(`${targets.length} search target(s): ${targets.map((t) => t.city).join(', ')}`);
+    targetCount = targets.length;
+    log.info(`${targets.length} search target(s): ${targets.map(describeTarget).join(' · ')}`);
 
-    // Chromium is only launched when a parser actually needs a page — keeps
-    // idle memory at ~50MB instead of ~400MB on a small server.
-    if (needsBrowser(sources)) {
-      browser = await launchBrowser();
-      log.info('chromium launched');
+    if (mayNeedBrowser(sources)) {
+      log.debug('chromium will be launched on demand');
     }
 
     for (const source of sources) {
@@ -53,10 +89,10 @@ export async function runScrape(sources: PropertySource[] = config.sources): Pro
       try {
         for (const target of targets) {
           const ctx: ScrapeContext = {
-            // Parsers that need a browser are the only ones that touch this,
-            // and needsBrowser() guarantees it was launched for them.
-            browser: browser as Browser,
             api,
+            newPage: () => browsers.newPage(),
+            anchor: (origin) => browsers.anchor(origin),
+            transports,
             log: logger(parser.label),
             maxPages: config.maxPages,
             pageSize: config.pageSize,
@@ -71,7 +107,7 @@ export async function runScrape(sources: PropertySource[] = config.sources): Pro
           totals.updated += result.updated;
 
           log.info(
-            `${parser.label} · ${target.city}: found ${result.found}, new ${result.created}, ` +
+            `${parser.label} · ${describeTarget(target)}: found ${result.found}, new ${result.created}, ` +
               `refreshed ${result.updated}, skipped ${result.skipped}`,
           );
 
@@ -81,6 +117,9 @@ export async function runScrape(sources: PropertySource[] = config.sources): Pro
         const deactivated = await deactivateStale(source, config.staleAfterDays);
         if (deactivated > 0) log.info(`${parser.label}: flagged ${deactivated} stale listing(s) inactive`);
 
+        const note = totals.found === 0 && source !== 'DEMO' ? SILENT_ZERO_NOTE : null;
+        if (note) log.warn(`${parser.label} ${note}`);
+
         await prisma.scrapeRun.update({
           where: { id: run.id },
           data: {
@@ -89,8 +128,11 @@ export async function runScrape(sources: PropertySource[] = config.sources): Pro
             listingsFound: totals.found,
             listingsCreated: totals.created,
             listingsUpdated: totals.updated,
+            error: note,
           },
         });
+
+        outcomes.push({ source, status: 'SUCCESS', ...totals, note });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         log.error(`${parser.label} failed: ${message}`);
@@ -105,12 +147,32 @@ export async function runScrape(sources: PropertySource[] = config.sources): Pro
             error: message.slice(0, 1000),
           },
         });
+
+        outcomes.push({ source, status: 'FAILED', ...totals, note: message });
       }
     }
   } finally {
     await api.dispose().catch(() => undefined);
-    if (browser) await browser.close().catch(() => undefined);
+    await browsers.close();
     running = false;
-    log.info(`run finished in ${Math.round((Date.now() - startedAt) / 1000)}s`);
   }
+
+  const finishedAt = new Date();
+  const summary: RunSummary = {
+    startedAt,
+    finishedAt,
+    durationMs: finishedAt.getTime() - startedAt.getTime(),
+    targets: targetCount,
+    outcomes,
+  };
+  lastSummary = summary;
+
+  const failed = outcomes.filter((o) => o.status === 'FAILED').length;
+  log.info(
+    `run finished in ${Math.round(summary.durationMs / 1000)}s · ` +
+      `${outcomes.length - failed}/${outcomes.length} source(s) ok, ` +
+      `${outcomes.reduce((n, o) => n + o.created, 0)} new listing(s)`,
+  );
+
+  return summary;
 }

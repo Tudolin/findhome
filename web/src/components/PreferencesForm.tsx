@@ -1,15 +1,17 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import type { PreferenceProfile } from '@prisma/client';
 import { AMENITY_OPTIONS } from '@/lib/constants';
+import { BR_STATES, displayName, locationSlug } from '@/lib/locations';
 import { savePreferences } from '@/lib/client';
 import { money } from '@/lib/format';
 
 type FormState = {
   city: string;
+  state: string;
   neighborhoods: string[];
   listingType: 'RENT' | 'SALE';
   minPrice: number;
@@ -28,6 +30,7 @@ const PRICE_CEILING = 20000;
 function initial(profile: PreferenceProfile | null): FormState {
   return {
     city: profile?.city ?? '',
+    state: profile?.state ?? '',
     neighborhoods: profile?.neighborhoods ?? [],
     listingType: (profile?.listingType as 'RENT' | 'SALE') ?? 'RENT',
     minPrice: profile?.minPrice ?? 0,
@@ -66,14 +69,38 @@ export default function PreferencesForm({
     setSaved(false);
   };
 
-  const toggleList = (key: 'neighborhoods' | 'amenities', value: string) => {
-    const current = form[key];
+  /** Slugs already chosen, so suggestions and duplicates agree with the server. */
+  const chosenSlugs = useMemo(() => new Set(form.neighborhoods.map(locationSlug)), [form.neighborhoods]);
+
+  /**
+   * Add/remove by slug rather than by string. Typing "vila mariana" when
+   * "Vila Mariana" is already a chip removes it instead of adding a second one —
+   * the same rule the API applies on save (see dedupeBySlug).
+   */
+  const toggleNeighborhood = (value: string) => {
+    const display = displayName(value, 80);
+    const slug = locationSlug(display);
+    if (!slug) return;
+
     set(
-      key,
-      current.some((v) => v.toLowerCase() === value.toLowerCase())
-        ? current.filter((v) => v.toLowerCase() !== value.toLowerCase())
-        : [...current, value],
+      'neighborhoods',
+      chosenSlugs.has(slug)
+        ? form.neighborhoods.filter((n) => locationSlug(n) !== slug)
+        : [...form.neighborhoods, display],
     );
+  };
+
+  const toggleAmenity = (value: string) => {
+    set(
+      'amenities',
+      form.amenities.includes(value) ? form.amenities.filter((v) => v !== value) : [...form.amenities, value],
+    );
+  };
+
+  const commitDraft = () => {
+    if (!draftHood.trim()) return;
+    toggleNeighborhood(draftHood);
+    setDraftHood('');
   };
 
   async function onSubmit(event: React.FormEvent) {
@@ -83,6 +110,7 @@ export default function PreferencesForm({
     try {
       await savePreferences({
         ...form,
+        state: form.state || null,
         minPrice: form.minPrice || null,
         maxPrice: form.maxPrice || null,
       });
@@ -118,8 +146,8 @@ export default function PreferencesForm({
       <div className="card p-6">
         <h2 className="mb-4 text-sm font-semibold">Location</h2>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="sm:col-span-2">
             <label className="label" htmlFor="city">
               City
             </label>
@@ -132,22 +160,47 @@ export default function PreferencesForm({
               value={form.city}
               onChange={(e) => set('city', e.target.value)}
             />
+            <p className="mt-1 text-[11px] text-ink-400">
+              Accents and capitalisation do not matter — “sao paulo” and “São Paulo” are the same search.
+            </p>
           </div>
 
           <div>
-            <p className="label">Listing type</p>
-            <div className="flex gap-1.5">
-              {(['RENT', 'SALE'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => set('listingType', t)}
-                  className={clsx('tag-toggle !min-w-[3.25rem] !justify-center !px-3', form.listingType === t && 'tag-toggle-on')}
-                >
-                  {t === 'RENT' ? 'Rent' : 'Buy'}
-                </button>
+            <label className="label" htmlFor="state">
+              State
+            </label>
+            <select id="state" className="input" value={form.state} onChange={(e) => set('state', e.target.value)}>
+              <option value="">— any —</option>
+              {BR_STATES.map((s) => (
+                <option key={s.uf} value={s.uf}>
+                  {s.uf} · {s.name}
+                </option>
               ))}
-            </div>
+            </select>
+            {!form.state && (
+              <p className="mt-1 text-[11px] text-amber-700">
+                Two portals scope their search by state. Pick one for accurate results.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <p className="label">Listing type</p>
+          <div className="flex gap-1.5">
+            {(['RENT', 'SALE'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => set('listingType', t)}
+                className={clsx(
+                  'tag-toggle !min-w-[3.25rem] !justify-center !px-3',
+                  form.listingType === t && 'tag-toggle-on',
+                )}
+              >
+                {t === 'RENT' ? 'Rent' : 'Buy'}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -155,26 +208,19 @@ export default function PreferencesForm({
           <p className="label">Target neighborhoods</p>
           <div className="mb-2 flex flex-wrap gap-1.5">
             {form.neighborhoods.map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => toggleList('neighborhoods', n)}
-                className="chip tint-pro"
-              >
+              <button key={locationSlug(n)} type="button" onClick={() => toggleNeighborhood(n)} className="chip tint-pro">
                 {n} <span className="opacity-60">×</span>
               </button>
             ))}
-            {form.neighborhoods.length === 0 && (
-              <span className="text-xs text-ink-400">Empty = the whole city</span>
-            )}
+            {form.neighborhoods.length === 0 && <span className="text-xs text-ink-400">Empty = the whole city</span>}
           </div>
 
           <div className="mb-2 flex flex-wrap gap-1.5">
             {knownNeighborhoods
-              .filter((n) => !form.neighborhoods.some((v) => v.toLowerCase() === n.toLowerCase()))
+              .filter((n) => !chosenSlugs.has(locationSlug(n)))
               .slice(0, 20)
               .map((n) => (
-                <button key={n} type="button" onClick={() => toggleList('neighborhoods', n)} className="tag-toggle">
+                <button key={locationSlug(n)} type="button" onClick={() => toggleNeighborhood(n)} className="tag-toggle">
                   + {n}
                 </button>
               ))}
@@ -189,20 +235,11 @@ export default function PreferencesForm({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  if (draftHood.trim()) toggleList('neighborhoods', draftHood.trim());
-                  setDraftHood('');
+                  commitDraft();
                 }
               }}
             />
-            <button
-              type="button"
-              className="btn-ghost"
-              disabled={!draftHood.trim()}
-              onClick={() => {
-                toggleList('neighborhoods', draftHood.trim());
-                setDraftHood('');
-              }}
-            >
+            <button type="button" className="btn-ghost" disabled={!draftHood.trim()} onClick={commitDraft}>
               Add
             </button>
           </div>
@@ -316,7 +353,7 @@ export default function PreferencesForm({
               <button
                 key={a}
                 type="button"
-                onClick={() => toggleList('amenities', a)}
+                onClick={() => toggleAmenity(a)}
                 className={clsx('tag-toggle', form.amenities.includes(a) && 'tag-toggle-on')}
               >
                 {a}

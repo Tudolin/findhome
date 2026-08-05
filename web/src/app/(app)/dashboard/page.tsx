@@ -4,7 +4,7 @@ import FeedControls from '@/components/FeedControls';
 import PropertyCard from '@/components/PropertyCard';
 import ScrapeStatus from '@/components/ScrapeStatus';
 import { describePreferences } from '@/lib/matching';
-import { getFeed, getLastScrapeRuns, type FeedSort } from '@/lib/queries';
+import { getFeed, getLastScrapeRuns, isScrapeRunning, type FeedSort } from '@/lib/queries';
 import { resolveWorkspace } from '@/lib/workspace';
 import type { UiProperty, UiWorkspace } from '@/lib/types';
 
@@ -20,7 +20,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const ws = await resolveWorkspace();
 
   const page = Number(first(sp.page) ?? 1) || 1;
-  const [feed, runs] = await Promise.all([
+  const [feed, runs, scraping] = await Promise.all([
     getFeed(ws, {
       sort: (first(sp.sort) as FeedSort) ?? 'newest',
       q: first(sp.q),
@@ -30,6 +30,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       ignorePreferences: first(sp.ignorePreferences) === 'true',
     }),
     getLastScrapeRuns(),
+    isScrapeRunning(),
   ]);
 
   const workspace: UiWorkspace = {
@@ -78,7 +79,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         <FeedControls />
       </Suspense>
 
-      <ScrapeStatus runs={runs} />
+      <ScrapeStatus runs={runs} running={scraping} />
 
       {feed.items.length === 0 ? (
         <div className="card p-12 text-center">
@@ -88,7 +89,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             <Link href="/preferences" className="font-semibold text-brand-700 hover:text-brand-800">
               Preferences
             </Link>
-            , tick “Ignore filters” above, or wait for the next scraper run to bring in fresh listings.
+            , tick “Ignore filters” above, or press <strong>Scrape now</strong> to pull fresh listings without waiting
+            for the schedule.
           </p>
         </div>
       ) : (

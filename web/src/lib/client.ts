@@ -39,6 +39,17 @@ export const postComment = (propertyId: string, body: string) =>
 export const savePreferences = (payload: unknown) =>
   request<{ profile: unknown }>('/api/preferences', { method: 'PUT', body: JSON.stringify(payload) });
 
+/**
+ * Starts a scrape immediately. Resolves as soon as the scraper has accepted the
+ * job (202), not when the run finishes — poll GET /api/scrape for that.
+ * Omit `sources` to use the server's SCRAPE_SOURCES.
+ */
+export const runScrape = (sources?: string[]) =>
+  request<{ started: true; sources: string[] }>('/api/scrape', {
+    method: 'POST',
+    body: JSON.stringify(sources?.length ? { sources } : {}),
+  });
+
 export const createParty = (name: string) =>
   request<{ party: { id: string; name: string; inviteCode: string } }>('/api/parties', {
     method: 'POST',

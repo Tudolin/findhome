@@ -40,6 +40,8 @@ enum PropertySource {
   VIVA_REAL
   QUINTO_ANDAR
   OLX
+  CHAVES_NA_MAO
+  IMOVELWEB
   MANUAL
   DEMO
 }
@@ -114,8 +116,21 @@ model PreferenceProfile {
   userId  String? @unique @map("user_id")
   partyId String? @unique @map("party_id")
 
+  // Display spellings, as typed by the user.
   city          String
   neighborhoods String[] @default([])
+
+  // Canonical UF ("SP", "PR"). Nullable because profiles predate the field;
+  // the scraper falls back to SCRAPE_DEFAULT_STATE when it is missing.
+  state String? @db.VarChar(2)
+
+  // Accent- and case-folded forms of the two fields above, written by the API
+  // on every save (see web/src/lib/locations.ts). Matching against these is
+  // what makes "São Paulo", "sao paulo" and "SAO PAULO" one city instead of
+  // three, so the feed filter is an exact equality check rather than a
+  // case-insensitive LIKE that accents defeat anyway.
+  citySlug          String   @default("") @map("city_slug")
+  neighborhoodSlugs String[] @default([]) @map("neighborhood_slugs")
 
   listingType             ListingType @default(RENT) @map("listing_type")
   minPrice                Int?        @map("min_price")
@@ -151,12 +166,19 @@ model Property {
   externalId String         @map("external_id")
   sourceUrl  String         @unique @map("source_url")
 
-  title        String
-  description  String?
-  address      String
-  neighborhood String
-  city         String
-  state        String?
+  title       String
+  description String?
+  address     String
+
+  // Display spellings, exactly as the portal sent them — this is what shows on
+  // a card. The *Slug columns beside them are the matching keys; see the note
+  // on PreferenceProfile.citySlug.
+  neighborhood     String
+  neighborhoodSlug String  @default("") @map("neighborhood_slug")
+  city             String
+  citySlug         String  @default("") @map("city_slug")
+  /// Canonical UF, normalised from whatever the portal called the state.
+  state            String? @db.VarChar(2)
 
   // All money values are whole BRL (no cents) to keep filtering/sorting cheap.
   rentPrice  Int @map("rent_price")
@@ -186,7 +208,8 @@ model Property {
 
   // De-duplication key for the scraping engine.
   @@unique([source, externalId])
-  @@index([city, neighborhood])
+  // The feed filters on the slug columns, so that is where the index belongs.
+  @@index([citySlug, neighborhoodSlug])
   @@index([totalPrice])
   @@index([createdAt])
   @@map("properties")

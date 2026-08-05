@@ -1,5 +1,8 @@
+import Link from 'next/link';
 import PreferencesForm from '@/components/PreferencesForm';
 import { prisma } from '@/lib/prisma';
+import { locationSlug } from '@/lib/locations';
+import { preferenceWarnings } from '@/lib/matching';
 import { getPreferenceProfile } from '@/lib/queries';
 import { resolveWorkspace } from '@/lib/workspace';
 
@@ -11,14 +14,29 @@ export default async function PreferencesPage() {
   const profile = await getPreferenceProfile(ws);
 
   // Suggest neighborhoods that actually exist in the scraped data for the
-  // configured city, so the tag picker is never a blank slate.
-  const rows = await prisma.property.groupBy({
-    by: ['neighborhood'],
-    where: profile?.city ? { city: { equals: profile.city, mode: 'insensitive' } } : {},
-    _count: { neighborhood: true },
-    orderBy: { _count: { neighborhood: 'desc' } },
-    take: 30,
-  });
+  // configured city. Grouped by the slug column so one neighborhood the portals
+  // spell three ways does not produce three suggestions; the display spelling
+  // comes back from `neighborhood` for readability.
+  const citySlug = profile ? profile.citySlug || locationSlug(profile.city) : '';
+  const rows = citySlug
+    ? await prisma.property.groupBy({
+        by: ['neighborhoodSlug', 'neighborhood'],
+        where: { citySlug, active: true },
+        _count: { neighborhoodSlug: true },
+        orderBy: { _count: { neighborhoodSlug: 'desc' } },
+        take: 60,
+      })
+    : [];
+
+  const seen = new Set<string>();
+  const knownNeighborhoods: string[] = [];
+  for (const row of rows) {
+    if (seen.has(row.neighborhoodSlug)) continue;
+    seen.add(row.neighborhoodSlug);
+    knownNeighborhoods.push(row.neighborhood);
+  }
+
+  const warnings = preferenceWarnings(profile);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -31,12 +49,30 @@ export default async function PreferencesPage() {
         </p>
       </div>
 
+      {warnings.length > 0 && (
+        <div className="mb-5 rounded-2xl bg-surface px-5 py-3.5 shadow-neu">
+          {warnings.map((warning) => (
+            <p key={warning} className="text-xs text-amber-700">
+              {warning}
+            </p>
+          ))}
+        </div>
+      )}
+
       <PreferencesForm
         profile={profile}
         workspaceName={ws.name}
         workspaceKind={ws.kind}
-        knownNeighborhoods={rows.map((r) => r.neighborhood)}
+        knownNeighborhoods={knownNeighborhoods}
       />
+
+      <p className="mt-5 text-center text-xs text-ink-400">
+        Saving here changes what the scraper looks for on its next run. To pull listings immediately, use{' '}
+        <Link href="/dashboard" className="font-semibold text-brand-700 hover:text-brand-800">
+          Scrape now
+        </Link>{' '}
+        on the discovery feed.
+      </p>
     </div>
   );
 }

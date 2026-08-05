@@ -1,146 +1,195 @@
-import type { Parser, RawListing, ScrapeContext, SearchTarget } from '../types.js';
-import { clean, detectPetPolicy, slugify, toInt, toMoney, unique } from './util.js';
+import type { Page } from 'playwright-core';
+import { buildPageParser, type PageParserConfig } from './page.js';
+import { clean, detectPetPolicy, idText, toInt, toMoney, unique } from './util.js';
+import type { RawListing, SearchTarget } from '../types.js';
 
 /**
  * OLX.
  *
- * Unlike the other portals, OLX has no convenient public JSON search API, so
- * this is the one parser that actually drives Chromium: it loads the results
- * page and reads the Next.js hydration payload (`__NEXT_DATA__`) that the page
- * already embeds. That is far more stable than CSS selectors, which change with
- * every redesign.
+ * This parser used to read the `__NEXT_DATA__` hydration payload. That payload
+ * no longer exists — the current search page carries nothing but ad-tech JSON
+ * and a pair of schema.org blocks describing OLX itself, which is why the
+ * parser was returning zero listings while the page answered 200.
  *
- * ⚠️ OLX fronts its pages with bot protection. Expect this parser to be the
- * first to break, and keep SCRAPE_DELAY_MS generous.
+ * The listings are server-rendered as `section.olx-adcard`, so that is what is
+ * read now. Two things make it less brittle than card scraping usually is:
+ *
+ *   - the specs come from `aria-label` ("1 quarto", "54 metros quadrados"),
+ *     which exists for screen readers and therefore has a reason to stay stable;
+ *   - the id comes from the trailing digits of the ad URL, not from markup.
+ *
+ * Verified against the live site. If it breaks, `make doctor` reports whether
+ * the page loaded at all (bot wall) or loaded and yielded nothing (markup).
  */
 
-const STATE_PATH: Record<string, string> = {
-  SP: 'estado-sp',
-  RJ: 'estado-rj',
-  MG: 'estado-mg',
-  RS: 'estado-rs',
-  PR: 'estado-pr',
-  SC: 'estado-sc',
-  BA: 'estado-ba',
-  DF: 'estado-df',
-  PE: 'estado-pe',
-  CE: 'estado-ce',
-};
+const ORIGIN = 'https://www.olx.com.br';
 
-type OlxAd = Record<string, unknown>;
+/**
+ * The regional path segment is simply the UF: `estado-pr`, `estado-sp`.
+ *
+ * The previous version kept a ten-state lookup table that fell back to
+ * `estado-sp`, so a search for Curitiba was quietly performed in São Paulo.
+ * There is no such fallback now: with no state we search nationally and say so.
+ */
+function urls(target: SearchTarget, pageNumber: number): string[] {
+  const section = target.listingType === 'SALE' ? 'venda' : 'aluguel';
+  const params = new URLSearchParams({ o: String(pageNumber) });
+  if (target.minPrice) params.set('ps', String(target.minPrice));
+  if (target.maxPrice) params.set('pe', String(target.maxPrice));
 
-function readProperty(ad: OlxAd, name: string): string | undefined {
-  const props = (ad.properties as Array<{ name?: string; value?: string }> | undefined) ?? [];
-  return props.find((p) => p.name === name)?.value;
+  if (!target.state) {
+    const national = new URLSearchParams(params);
+    national.set('q', target.city);
+    return [`${ORIGIN}/imoveis/${section}?${national}`];
+  }
+
+  const uf = target.state.toLowerCase();
+  return [
+    `${ORIGIN}/imoveis/${section}/estado-${uf}/${target.citySlug}?${params}`,
+    // Some cities sit under a region segment rather than their own slug.
+    `${ORIGIN}/imoveis/${section}/estado-${uf}?${new URLSearchParams({ ...Object.fromEntries(params), q: target.city })}`,
+  ];
 }
 
-function mapAd(ad: OlxAd, fallbackCity: string): RawListing | null {
-  const externalId = clean(ad.listId ?? ad.id, 80);
-  const sourceUrl = clean(ad.url, 500);
-  if (!externalId || !sourceUrl) return null;
+/** One card as read from the DOM. Everything is a string; parsing happens below. */
+type Card = {
+  href: string;
+  title: string;
+  price: string;
+  location: string;
+  /** aria-labels of the spec chips, e.g. ["54 metros quadrados", "1 quarto"]. */
+  details: string[];
+  /** Extra price lines, e.g. ["Condomínio R$ 500", "IPTU R$ 90"]. */
+  priceInfo: string[];
+  image: string;
+};
 
-  const rentPrice = toMoney(ad.price);
+/** Runs in the page. Returns plain data so all parsing stays in typed Node code. */
+function readCards(): Card[] {
+  const scope = globalThis as unknown as {
+    document: {
+      querySelectorAll: (s: string) => ArrayLike<Element>;
+    };
+  };
+  type Element = {
+    querySelector: (s: string) => Element | null;
+    querySelectorAll: (s: string) => ArrayLike<Element>;
+    getAttribute: (name: string) => string | null;
+    textContent: string | null;
+  };
+
+  const cards = scope.document.querySelectorAll('section.olx-adcard, section[class*="adcard"]');
+  const out: Card[] = [];
+
+  for (let i = 0; i < cards.length; i += 1) {
+    const card = cards[i];
+    const text = (selector: string) => card.querySelector(selector)?.textContent?.trim() ?? '';
+    const all = (selector: string) => {
+      const nodes = card.querySelectorAll(selector);
+      const values: Element[] = [];
+      for (let n = 0; n < nodes.length; n += 1) values.push(nodes[n]);
+      return values;
+    };
+
+    const link = card.querySelector('a[data-testid="adcard-link"]') ?? card.querySelector('a[href]');
+
+    out.push({
+      href: link?.getAttribute('href') ?? '',
+      title: text('.olx-adcard__title') || link?.getAttribute('title') || '',
+      price: text('.olx-adcard__price'),
+      location: text('.olx-adcard__location'),
+      details: all('.olx-adcard__detail').map(
+        (d) => d.getAttribute('aria-label') ?? d.textContent?.trim() ?? '',
+      ),
+      priceInfo: all('.olx-adcard__price-info-list *').map((e) => e.textContent?.trim() ?? ''),
+      image: card.querySelector('img')?.getAttribute('src') ?? '',
+    });
+  }
+
+  return out;
+}
+
+/** The ad id is the trailing number of the ad URL. */
+function idFromHref(href: string): string {
+  const match = href.match(/(\d{6,})(?:[/?#]|$)/);
+  return match ? match[1] : '';
+}
+
+/**
+ * Spec chips carry a screen-reader label: "54 metros quadrados", "2 quartos",
+ * "1 vaga de garagem". Matching on the noun is more durable than relying on the
+ * chips arriving in a fixed order.
+ */
+function spec(details: string[], pattern: RegExp): number {
+  for (const detail of details) {
+    if (pattern.test(detail)) return toInt(detail);
+  }
+  return 0;
+}
+
+/** "Santos, Boqueirão" -> { city: "Santos", neighborhood: "Boqueirão" } */
+function splitLocation(value: string, fallbackCity: string) {
+  const parts = value
+    .split(',')
+    .map((p) => clean(p, 120))
+    .filter(Boolean);
+  if (parts.length >= 2) return { city: parts[0], neighborhood: parts.slice(1).join(', ') };
+  return { city: parts[0] || fallbackCity, neighborhood: parts[0] || fallbackCity };
+}
+
+/** Pulls "Condomínio R$ 500" style extras out of the price block. */
+function priceExtra(lines: string[], pattern: RegExp): number {
+  for (const line of lines) {
+    if (pattern.test(line)) return toMoney(line);
+  }
+  return 0;
+}
+
+export function mapCard(card: Card, target: SearchTarget): RawListing | null {
+  const externalId = idText(idFromHref(card.href));
+  if (!externalId) return null;
+
+  const rentPrice = toMoney(card.price);
   if (!rentPrice) return null;
 
-  const location = (ad.location as Record<string, unknown> | undefined) ?? {};
-  const neighborhood = clean(location.neighbourhood ?? ad.neighbourhood);
-  const city = clean(location.municipality ?? ad.municipality) || fallbackCity;
-  const description = clean(ad.subject ?? ad.body, 2000);
-
-  const images = unique(
-    (((ad.images ?? ad.thumbnails) as Array<{ original?: string; medium?: string }> | undefined) ?? [])
-      .map((i) => clean(i.original ?? i.medium))
-      .filter(Boolean),
-  ).slice(0, 12);
+  const sourceUrl = card.href.startsWith('http') ? card.href : `${ORIGIN}${card.href}`;
+  const { city, neighborhood } = splitLocation(card.location, target.city);
+  const title = clean(card.title, 200);
 
   return {
     externalId,
     sourceUrl,
-    title: clean(ad.subject ?? ad.title, 200) || `Imóvel em ${neighborhood || city}`,
-    description: description || null,
-    address: clean(ad.address) || neighborhood || city,
-    neighborhood: neighborhood || city,
+    title: title || `Imóvel em ${neighborhood}`,
+    // The card shows no description; the title is the only prose available and
+    // is what the pet-policy heuristic has to work from.
+    description: null,
+    address: neighborhood,
+    neighborhood,
     city,
-    state: clean(location.uf) || null,
+    state: target.state,
     rentPrice,
-    condoFee: toMoney(readProperty(ad, 'condominio')),
-    taxFee: toMoney(readProperty(ad, 'iptu')),
-    bedrooms: toInt(readProperty(ad, 'rooms')),
-    bathrooms: toInt(readProperty(ad, 'bathrooms')),
-    parkingSpots: toInt(readProperty(ad, 'garage_spaces')),
-    sqm: toInt(readProperty(ad, 'size')),
-    images,
+    condoFee: priceExtra(card.priceInfo, /condom/i),
+    taxFee: priceExtra(card.priceInfo, /iptu/i),
+    bedrooms: spec(card.details, /quarto|dormit/i),
+    bathrooms: spec(card.details, /banheiro/i),
+    parkingSpots: spec(card.details, /vaga|garagem/i),
+    sqm: spec(card.details, /metros quadrados|m²/i),
+    images: unique([clean(card.image, 500)].filter(Boolean)),
     amenities: [],
-    petFriendly: detectPetPolicy(description),
-    listingType: 'RENT',
+    petFriendly: detectPetPolicy(title),
+    listingType: target.listingType,
   };
 }
 
-export const olxParser: Parser = {
-  source: 'OLX',
+export const OLX_CONFIG: PageParserConfig = {
   label: 'OLX',
-
-  async search(target: SearchTarget, ctx: ScrapeContext): Promise<RawListing[]> {
-    const statePath = STATE_PATH[(target.state ?? '').toUpperCase()] ?? 'estado-sp';
-    const section = target.listingType === 'SALE' ? 'venda' : 'aluguel';
-    const base = `https://www.olx.com.br/imoveis/${section}/${statePath}/${slugify(target.city)}`;
-
-    const page = await ctx.browser.newPage({ userAgent: process.env.SCRAPE_USER_AGENT });
-    page.setDefaultNavigationTimeout(45_000);
-
-    // Images and fonts are pure weight for a scraper; blocking them roughly
-    // halves the memory footprint per page on a small home server.
-    await page.route('**/*', (route) => {
-      const type = route.request().resourceType();
-      if (type === 'image' || type === 'font' || type === 'media') return route.abort();
-      return route.continue();
-    });
-
-    const results: RawListing[] = [];
-
-    try {
-      for (let pageNumber = 1; pageNumber <= ctx.maxPages; pageNumber += 1) {
-        const params = new URLSearchParams({ o: String(pageNumber) });
-        if (target.minPrice) params.set('ps', String(target.minPrice));
-        if (target.maxPrice) params.set('pe', String(target.maxPrice));
-        if (target.minBedrooms) params.set('ros', String(target.minBedrooms));
-
-        const url = `${base}?${params.toString()}`;
-        ctx.log.debug(`OLX: ${url}`);
-        await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-        const json = await page
-          .locator('#__NEXT_DATA__')
-          .textContent({ timeout: 15_000 })
-          .catch(() => null);
-
-        if (!json) {
-          ctx.log.warn('OLX: no __NEXT_DATA__ on the page (bot wall or layout change)');
-          break;
-        }
-
-        const data = JSON.parse(json) as {
-          props?: { pageProps?: { ads?: OlxAd[]; listingProps?: { adList?: OlxAd[] } } };
-        };
-        const ads = data.props?.pageProps?.ads ?? data.props?.pageProps?.listingProps?.adList ?? [];
-        if (ads.length === 0) break;
-
-        for (const ad of ads) {
-          const mapped = mapAd(ad, target.city);
-          if (mapped) results.push(mapped);
-        }
-
-        await ctx.delay();
-      }
-    } finally {
-      await page.close().catch(() => undefined);
-    }
-
-    if (target.neighborhoods.length) {
-      const wanted = new Set(target.neighborhoods.map((n) => n.toLowerCase()));
-      return results.filter((r) => wanted.has(r.neighborhood.toLowerCase()));
-    }
-
-    return results;
+  origin: ORIGIN,
+  urls,
+  async extract(page: Page, target: SearchTarget): Promise<RawListing[]> {
+    const cards = await page.evaluate(readCards);
+    return cards.map((card) => mapCard(card, target)).filter((l): l is RawListing => l !== null);
   },
 };
+
+export const olxParser = buildPageParser('OLX', OLX_CONFIG);
+

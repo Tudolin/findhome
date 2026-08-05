@@ -1,7 +1,11 @@
 type Level = 'debug' | 'info' | 'warn' | 'error';
 
 const LEVELS: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
-const threshold = LEVELS[(process.env.LOG_LEVEL as Level) ?? 'info'] ?? LEVELS.info;
+
+// Trimmed and lower-cased because compose passes an unset optional as the empty
+// string, and "INFO" is a reasonable thing for someone to write in .env.
+// Deliberately does not import ./config — config is free to log.
+const threshold = LEVELS[(process.env.LOG_LEVEL ?? '').trim().toLowerCase() as Level] ?? LEVELS.info;
 
 function emit(level: Level, scope: string, message: string, extra?: unknown) {
   if (LEVELS[level] < threshold) return;

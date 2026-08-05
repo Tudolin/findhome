@@ -4,7 +4,7 @@ import CommentThread from '@/components/CommentThread';
 import PhotoCarousel from '@/components/PhotoCarousel';
 import PropertyReview from '@/components/PropertyReview';
 import ScoreBadge from '@/components/ScoreBadge';
-import { money, relativeDate } from '@/lib/format';
+import { money, relativeDate, sourceLabel } from '@/lib/format';
 import { getPropertyDetail } from '@/lib/queries';
 import { resolveWorkspace } from '@/lib/workspace';
 import type { UiInteraction, UiWorkspace } from '@/lib/types';
@@ -58,7 +58,7 @@ export default async function PropertyPage({ params }: { params: Params }) {
         <div className="flex items-center gap-3">
           {ws.kind === 'PARTY' && <ScoreBadge score={property.partyScore} />}
           <a href={property.sourceUrl} target="_blank" rel="noreferrer" className="btn-ghost">
-            Open on {property.source.replace('_', ' ')} ↗
+            Open on {sourceLabel(property.source)} ↗
           </a>
         </div>
       </div>

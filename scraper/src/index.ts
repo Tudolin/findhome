@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { prisma } from './db.js';
 import { logger } from './logger.js';
 import { runScrape } from './runner.js';
+import { startControlServer } from './server.js';
 
 const log = logger('scheduler');
 
@@ -32,6 +33,9 @@ async function main() {
     void runScrape().catch((err) => log.error('scheduled run crashed', err));
   }, { timezone: config.timezone });
 
+  // Manual triggers ("Run scrape now" in the app, `make scrape-now`).
+  const server = startControlServer();
+
   if (config.runOnStart) {
     log.info('SCRAPE_ON_START=true — running one pass now');
     void runScrape().catch((err) => log.error('startup run crashed', err));
@@ -40,6 +44,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     log.info(`${signal} received, shutting down`);
     task.stop();
+    server?.close();
     await prisma.$disconnect().catch(() => undefined);
     process.exit(0);
   };

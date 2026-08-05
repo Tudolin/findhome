@@ -53,6 +53,20 @@ export async function getLastScrapeRuns() {
   return [...latestPerSource.values()];
 }
 
+/**
+ * True while a run is in flight, so the dashboard's trigger button starts in the
+ * right state on a fresh page load. Read from the ScrapeRun table rather than by
+ * calling the scraper: this runs during render, and a page should not wait on
+ * another container to paint.
+ */
+export async function isScrapeRunning(): Promise<boolean> {
+  const running = await prisma.scrapeRun.findFirst({
+    where: { status: 'RUNNING' },
+    select: { id: true },
+  });
+  return running !== null;
+}
+
 export async function getPreferenceProfile(ws: Workspace) {
   return prisma.preferenceProfile.findFirst({
     where: ws.kind === 'SOLO' ? { userId: ws.userId } : { partyId: ws.partyId! },

@@ -1,5 +1,6 @@
 import { prisma } from './db.js';
 import { config } from './config.js';
+import { dedupeBySlug, displayName, locationSlug, toUf } from './locations.js';
 import type { SearchTarget } from './types.js';
 
 /**
@@ -7,16 +8,25 @@ import type { SearchTarget } from './types.js';
  * in the database (solo and party) becomes a search target. Profiles that
  * overlap are merged so two users hunting the same city do not double the
  * request volume.
+ *
+ * Every location that comes out of here is canonical: `citySlug` and
+ * `neighborhoodSlugs` are `locationSlug()` values and `state` is a two-letter
+ * UF. Profiles saved before the state field existed fall back to
+ * SCRAPE_DEFAULT_STATE, which is the only place a default is applied — the
+ * parsers themselves never guess a state.
  */
 export async function buildSearchTargets(): Promise<SearchTarget[]> {
   const profiles = await prisma.preferenceProfile.findMany();
 
   if (profiles.length === 0) {
+    const city = displayName(config.defaultCity);
     return [
       {
-        city: config.defaultCity,
-        state: config.defaultState,
+        city,
+        citySlug: locationSlug(city),
+        state: toUf(config.defaultState),
         neighborhoods: [],
+        neighborhoodSlugs: [],
         listingType: 'RENT',
         minPrice: null,
         maxPrice: null,
@@ -29,14 +39,26 @@ export async function buildSearchTargets(): Promise<SearchTarget[]> {
   const merged = new Map<string, SearchTarget>();
 
   for (const profile of profiles) {
-    const key = `${profile.city.trim().toLowerCase()}|${profile.listingType}`;
+    const city = displayName(profile.city);
+    const citySlug = locationSlug(city);
+    if (!citySlug) continue;
+
+    // The profile's own state wins; the env default only covers profiles saved
+    // before the field existed.
+    const state = toUf(profile.state) ?? toUf(config.defaultState);
+    const neighborhoods = dedupeBySlug(profile.neighborhoods);
+
+    // Two cities can share a name across states, so the state belongs in the key.
+    const key = `${citySlug}|${state ?? '-'}|${profile.listingType}`;
     const existing = merged.get(key);
 
     if (!existing) {
       merged.set(key, {
-        city: profile.city.trim(),
-        state: config.defaultState,
-        neighborhoods: [...profile.neighborhoods],
+        city,
+        citySlug,
+        state,
+        neighborhoods,
+        neighborhoodSlugs: neighborhoods.map(locationSlug),
         listingType: profile.listingType,
         minPrice: profile.minPrice,
         maxPrice: profile.maxPrice,
@@ -48,7 +70,16 @@ export async function buildSearchTargets(): Promise<SearchTarget[]> {
 
     // Widen the merged target so it is a superset of both profiles — filtering
     // back down to each user's exact criteria happens at query time in the app.
-    existing.neighborhoods = [...new Set([...existing.neighborhoods, ...profile.neighborhoods])];
+    // An empty neighborhood list means "the whole city", which makes any
+    // per-neighborhood narrowing from the other profile pointless.
+    if (existing.neighborhoodSlugs.length === 0 || neighborhoods.length === 0) {
+      existing.neighborhoods = [];
+      existing.neighborhoodSlugs = [];
+    } else {
+      existing.neighborhoods = dedupeBySlug([...existing.neighborhoods, ...neighborhoods]);
+      existing.neighborhoodSlugs = existing.neighborhoods.map(locationSlug);
+    }
+
     existing.minPrice =
       existing.minPrice === null || profile.minPrice === null ? null : Math.min(existing.minPrice, profile.minPrice);
     existing.maxPrice =
@@ -57,14 +88,12 @@ export async function buildSearchTargets(): Promise<SearchTarget[]> {
     existing.minSqm = Math.min(existing.minSqm, profile.minSqm);
   }
 
-  // An empty neighborhood list means "the whole city", which makes any
-  // per-neighborhood narrowing from another profile pointless.
-  for (const target of merged.values()) {
-    const cityWide = profiles.some(
-      (p) => p.city.trim().toLowerCase() === target.city.toLowerCase() && p.neighborhoods.length === 0,
-    );
-    if (cityWide) target.neighborhoods = [];
-  }
-
   return [...merged.values()];
+}
+
+/** One-line description of a target, for run logs. */
+export function describeTarget(target: SearchTarget): string {
+  const place = [target.city, target.state].filter(Boolean).join('/');
+  const hoods = target.neighborhoods.length ? ` [${target.neighborhoods.join(', ')}]` : '';
+  return `${place}${hoods}`;
 }

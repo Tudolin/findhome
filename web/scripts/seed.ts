@@ -12,6 +12,7 @@
  */
 import { PrismaClient, PartyRole, InteractionStatus, PropertySource } from '@prisma/client';
 import { hash } from 'bcryptjs';
+import { locationSlug } from '../src/lib/locations';
 
 const prisma = new PrismaClient();
 
@@ -159,15 +160,26 @@ async function main() {
     },
   });
 
+  // Deliberately looser than the party profile below, so the two workspaces
+  // visibly return different feeds on first login.
+  const soloNeighborhoods = ['Pinheiros', 'Vila Madalena', 'Sumaré', 'Barra Funda'];
+
   await prisma.preferenceProfile.upsert({
     where: { userId: alex.id },
-    update: {},
+    // Only the derived location fields are refreshed on a re-seed: a demo user
+    // who edited their filters keeps their edits, but their slugs stay correct.
+    update: {
+      state: 'SP',
+      citySlug: locationSlug('São Paulo'),
+      neighborhoodSlugs: soloNeighborhoods.map(locationSlug),
+    },
     create: {
       userId: alex.id,
       city: 'São Paulo',
-      // Deliberately looser than the party profile below, so the two
-      // workspaces visibly return different feeds on first login.
-      neighborhoods: ['Pinheiros', 'Vila Madalena', 'Sumaré', 'Barra Funda'],
+      citySlug: locationSlug('São Paulo'),
+      state: 'SP',
+      neighborhoods: soloNeighborhoods,
+      neighborhoodSlugs: soloNeighborhoods.map(locationSlug),
       minPrice: 1500,
       maxPrice: 4500,
       includeCondoInMaxPrice: true,
@@ -180,13 +192,22 @@ async function main() {
     },
   });
 
+  const partyNeighborhoods = ['Pinheiros', 'Pompeia', 'Perdizes', 'Sumaré'];
+
   await prisma.preferenceProfile.upsert({
     where: { partyId: party.id },
-    update: {},
+    update: {
+      state: 'SP',
+      citySlug: locationSlug('São Paulo'),
+      neighborhoodSlugs: partyNeighborhoods.map(locationSlug),
+    },
     create: {
       partyId: party.id,
       city: 'São Paulo',
-      neighborhoods: ['Pinheiros', 'Pompeia', 'Perdizes', 'Sumaré'],
+      citySlug: locationSlug('São Paulo'),
+      state: 'SP',
+      neighborhoods: partyNeighborhoods,
+      neighborhoodSlugs: partyNeighborhoods.map(locationSlug),
       minPrice: 2000,
       maxPrice: 5500,
       includeCondoInMaxPrice: true,
@@ -203,11 +224,16 @@ async function main() {
   for (const p of DEMO_PROPERTIES) {
     const totalPrice = p.rentPrice + p.condoFee + p.taxFee;
     const sourceUrl = `https://demo.findhome.local/imovel/${p.externalId}`;
+    // The slug columns are what the feed filter matches on, so a seeded listing
+    // has to carry them exactly like a scraped one would.
+    const slugs = { citySlug: locationSlug(p.city), neighborhoodSlug: locationSlug(p.neighborhood) };
+
     const property = await prisma.property.upsert({
       where: { source_externalId: { source: PropertySource.DEMO, externalId: p.externalId } },
-      update: { lastSeenAt: new Date() },
+      update: { lastSeenAt: new Date(), ...slugs },
       create: {
         ...p,
+        ...slugs,
         source: PropertySource.DEMO,
         sourceUrl,
         totalPrice,

@@ -19,13 +19,14 @@ API keys.
 4. [Exposing it on your LAN](#exposing-it-on-your-lan)
 5. [Reverse proxy](#reverse-proxy)
 6. [The scraping engine](#the-scraping-engine)
-7. [Database, migrations and seeds](#database-migrations-and-seeds)
-8. [Backup and restore](#backup-and-restore)
-9. [Everyday commands](#everyday-commands)
-10. [Architecture](#architecture)
-11. [Configuration reference](#configuration-reference)
-12. [Troubleshooting](#troubleshooting)
-13. [Security notes](#security-notes)
+7. [Location standardisation](#location-standardisation)
+8. [Database, migrations and seeds](#database-migrations-and-seeds)
+9. [Backup and restore](#backup-and-restore)
+10. [Everyday commands](#everyday-commands)
+11. [Architecture](#architecture)
+12. [Configuration reference](#configuration-reference)
+13. [Troubleshooting](#troubleshooting)
+14. [Security notes](#security-notes)
 
 ---
 
@@ -211,36 +212,106 @@ involved.
 SCRAPE_CRON=0 8,20 * * *   # 08:00 and 20:00 daily (default)
 SCRAPE_CRON=0 */6 * * *    # every 6 hours
 SCRAPE_CRON=0 8 * * *      # once a day at 08:00
-SCRAPE_SOURCES=DEMO        # ZAP, VIVA_REAL, QUINTO_ANDAR, OLX, DEMO
+SCRAPE_SOURCES=DEMO        # see the table below
 ```
+
+### The sources
+
+| Source | How it reads the portal | Status |
+|---|---|---|
+| `QUINTO_ANDAR` | JSON API (`/house-listing-search/v3/search/list`) | verified working |
+| `OLX` | renders the page, reads the `section.olx-adcard` cards | verified working |
+| `CHAVES_NA_MAO` | renders the page, reads its schema.org `Offer` list | verified working |
+| `IMOVELWEB` | renders the page, reads the `data-qa` card hooks | verified working |
+| `ZAP`, `VIVA_REAL` | Grupo ZAP's shared JSON API | blocked by Cloudflare from datacenter IPs — see below |
+| `DEMO` | synthetic listings, no network calls | always works |
+
+Each parser's source file opens with a comment recording the exact contract it
+depends on and how it was verified, so the next person to fix it starts from
+facts rather than guesses.
+
+### Is it working? `make doctor`
+
+```bash
+make doctor                      # probes every source in SCRAPE_SOURCES
+make doctor SOURCES=ZAP,OLX      # or just these
+```
+
+This is the first thing to run when the feed stops filling up. A log line
+saying `403 Forbidden` does not tell you *which* thing broke, and the four
+possibilities have four different fixes. The doctor separates them:
+
+```
+[OK    ] QuintoAndar  (QUINTO_ANDAR)
+        .../v3/search/list: 200 application/json via direct - 5 hit(s) of 65438 available, 5 mapped, 5 in São Paulo
+        -> healthy
+        sample: "Apartamento · 1 quartos em Campos Elíseos" | Campos Elíseos, São Paulo/SP | R$ 1785 + 1169 condo ...
+
+[OK    ] OLX  (OLX)
+        https://www.olx.com.br/imoveis/aluguel/estado-sp/sao-paulo?o=1: HTTP 200 - 50 listing(s) read, 14 in São Paulo
+        -> healthy
+```
+
+It reports, per source: which URL answered, over which transport, how many
+listings came back, **how many survive the city filter**, a mapped sample, and a
+diagnosis naming the likely cause. It writes nothing to the database and exits
+non-zero if any source failed.
+
+The distinctions it draws are the useful part:
+
+- *endpoint moved* — every known path 404s → set `GRUPOZAP_ENDPOINT` / `QUINTOANDAR_ENDPOINT`
+- *contract changed* — 200 but 0 listings → the query parameters were renamed
+- *fields renamed* — listings returned but none map → fix the parser's mapper
+- *markup redesigned* — page loads but nothing readable → fix the selectors
+- *IP blocked* — even the portal's front page 403s → nothing to fix in this code
 
 ### How a run works
 
 1. **Targets** — every `PreferenceProfile` in the database (solo *and* party)
-   becomes a search target. Profiles for the same city are merged into one
-   widened search, so two people hunting São Paulo don't double the traffic.
-2. **Parsers** — each enabled source is queried. ZAP, Viva Real and QuintoAndar
-   are served by JSON endpoints, so those parsers use a plain HTTP client and
-   never launch a browser. Only OLX drives Chromium, and it reads the page's
-   `__NEXT_DATA__` hydration payload rather than CSS selectors.
+   becomes a search target. Profiles for the same city *and state* are merged
+   into one widened search, so two people hunting São Paulo don't double the
+   traffic. City, state and neighborhoods are canonicalised first (see
+   [Location standardisation](#location-standardisation)).
+2. **Transport** — the JSON parsers try a plain HTTP client first. If the
+   endpoint answers with a bot wall (403/429, or 200 with a non-JSON body), the
+   request is retried *from inside a real Chromium page parked on the portal's
+   own origin*, which carries Chromium's TLS fingerprint and cookie jar. That is
+   what the portal's own front-end looks like, because it is what the portal's
+   own front-end does. Chromium is launched lazily, so an unchallenged run never
+   pays for it.
 3. **De-duplication** happens on three levels: by `external_id` within the
    batch, by `source_url` within the batch, and in the database via the unique
    `(source, external_id)` index — a listing seen again is *refreshed*, never
    duplicated. `created_at` is preserved so "new this week" stays meaningful.
-4. **Stale listings** not seen for `SCRAPE_STALE_DAYS` are flagged inactive and
+4. **Filtering** — every portal pads its results with promoted listings from
+   other cities, so anything outside the target city is dropped before it is
+   stored. Minimum bedrooms and area are enforced here too, because ZAP's and
+   QuintoAndar's equivalent parameters are exact-match, not minimums.
+5. **Stale listings** not seen for `SCRAPE_STALE_DAYS` are flagged inactive and
    drop out of the feed.
-5. **Every source writes a `ScrapeRun` row** (found / created / updated / error),
+6. **Every source writes a `ScrapeRun` row** (found / created / updated / error),
    so a broken parser is visible in the database, not just in container logs.
-   A failing source never aborts the others.
+   A failing source never aborts the others. A source that completes but returns
+   **zero** listings is recorded with a note and shown as a warning in the app —
+   "200 OK, nothing found" is the failure that hides best.
 
 ### Triggering a run by hand
 
+Four ways in, all equivalent:
+
 ```bash
-make scrape                                    # uses SCRAPE_SOURCES from .env
-make scrape-demo                               # offline parser only
-docker compose exec scraper node dist/cli.js ZAP,VIVA_REAL
-docker compose logs -f scraper
+# In the app:  Discovery -> "Scrape now"          (any signed-in user)
+make scrape                     # run now and WAIT; exits non-zero if a source failed
+make scrape SOURCES=ZAP,OLX     # ...only these
+make scrape-now                 # run now in the BACKGROUND (what the button does)
+make scrape-status              # last run's outcome per source
+make scrape-demo                # offline parser only
 ```
+
+The button and `make scrape-now` both go through the scraper's small control
+API. That port is **not** published by compose — only the `web` container can
+reach it, over the private bridge network, authenticated with
+`SCRAPE_CONTROL_TOKEN` (generated by `setup.sh`).
 
 ### Checking on it
 
@@ -252,20 +323,57 @@ FROM scrape_runs ORDER BY started_at DESC LIMIT 10;
 
 ### ⚠️ About the portal parsers
 
-Real estate portals have no public API and no stability guarantee. The
-endpoints and payload shapes the ZAP/Viva Real, QuintoAndar and OLX parsers
-rely on are undocumented, are not versioned in practice, and **will** change.
-OLX in particular sits behind bot protection.
+Real estate portals have no public API and no stability guarantee. The endpoints,
+payload shapes and markup these parsers rely on are undocumented, are not
+versioned in practice, and **will** change.
 
 The code is written to degrade rather than explode — a changed field skips a
-listing, a failed source is recorded and the run continues — but expect to
-maintain the parsers. Each one has a comment at the top explaining exactly what
-to re-check and which env var overrides the endpoint
-(`GRUPOZAP_ENDPOINT`, `QUINTOANDAR_ENDPOINT`).
+listing, a failed source is recorded and the run continues — and `make doctor`
+tells you which part moved. Expect to do some maintenance anyway.
+
+**ZAP and Viva Real specifically:** Grupo ZAP fronts both the portal and its API
+with Cloudflare, and from a datacenter or VPN address *the front page itself*
+answers 403 — there is no request this code can make that would work. A
+residential connection (which is what a home server usually has) normally passes.
+`make doctor` distinguishes this case explicitly rather than blaming the parser.
 
 Keep `SCRAPE_DELAY_MS` at a polite value and `SCRAPE_MAX_PAGES` low. Check the
 terms of service of any portal you point this at; scraping may violate them.
 That's your call to make, not the software's.
+
+---
+
+## Location standardisation
+
+Cities, states and neighborhoods arrive spelled every possible way — the user
+types `sao paulo`, one portal returns `São Paulo` and another `SAO PAULO`. So
+every place name is reduced to a slug before it is stored or compared:
+
+```
+"São Paulo"  "sao paulo"  "  SÃO  PAULO "   ->  sao-paulo
+"Paraná"     "parana"     "PR"              ->  PR        (canonical UF)
+```
+
+- **Storage.** `properties` and `preference_profiles` each keep the display
+  spelling *and* a slug column (`city_slug`, `neighborhood_slug(s)`). Cards show
+  the pretty name; filters compare the slug.
+- **Filtering.** The feed matches `citySlug` exactly. The previous
+  `{ city: { equals, mode: 'insensitive' } }` looked equivalent but is not —
+  case-insensitivity does nothing about accents, so a profile saved as
+  `Sao Paulo` matched no listing at all.
+- **State.** Preferences now carry a state, picked from a list of the 27 UFs.
+  This matters: ZAP builds a location id from it, QuintoAndar builds a city slug
+  from it, and OLX/ImovelWeb/Chaves na Mão all put it in the URL. Without one,
+  searches are broader and can return a same-named city in another state — the
+  app says so on the Preferences screen instead of failing quietly.
+- **Neighborhoods.** Entering `vila mariana` when `Vila Mariana` is already a tag
+  toggles it off instead of adding a duplicate, in the UI and again on the server.
+
+The slug function is implemented three times — `scraper/src/locations.ts`,
+`web/src/lib/locations.ts` and in SQL in the `location_normalization` migration
+(which backfills existing rows). They must agree, and the migration's comment
+says so; the SQL was checked against the TypeScript over 28 awkward names
+(cedillas, tildes, apostrophes, punctuation-only input) before shipping.
 
 ---
 
@@ -340,7 +448,10 @@ make up            start
 make down          stop (data is preserved)
 make logs          follow all logs
 make ps            container status and health
-make scrape        trigger a scraper run now
+make scrape        run the scraper now and wait for it
+make scrape-now    run the scraper now in the background
+make scrape-status last run's outcome per source
+make doctor        probe every portal and report what is broken and why
 make seed          load demo data
 make backup        dump the database
 make psql          open a SQL prompt
@@ -524,11 +635,17 @@ Everything is set in `.env`. Full annotated list in
 | `WEB_PORT` | `3000` | Host port |
 | `TZ` | `America/Sao_Paulo` | Drives cron evaluation |
 | `SCRAPE_CRON` | `0 8,20 * * *` | Standard 5-field cron |
-| `SCRAPE_SOURCES` | `DEMO` | `ZAP,VIVA_REAL,QUINTO_ANDAR,OLX,DEMO` |
+| `SCRAPE_SOURCES` | `DEMO` | `ZAP,VIVA_REAL,QUINTO_ANDAR,OLX,CHAVES_NA_MAO,IMOVELWEB,DEMO` |
 | `SCRAPE_ON_START` | `true` | Run one pass at container start |
 | `SCRAPE_MAX_PAGES` | `2` | Pages per source per target |
 | `SCRAPE_DELAY_MS` | `1500` | Politeness delay. Don't set near zero |
 | `SCRAPE_STALE_DAYS` | `21` | Hide listings not seen in this long |
+| `SCRAPE_DEFAULT_CITY/STATE` | `São Paulo`/`SP` | Used until someone saves preferences, and for profiles with no state |
+| `SCRAPE_CONTROL_TOKEN` | *(generated)* | Guards the manual-trigger API. `setup.sh` fills it in |
+| `SCRAPE_CONTROL_PORT` | `8080` | Never published to the LAN |
+| `SCRAPE_CONTROL_ENABLED` | `true` | `false` disables "Scrape now" and `make scrape-now` |
+| `GRUPOZAP_ENDPOINT` | *(built-in)* | Override when `make doctor` says the path moved |
+| `QUINTOANDAR_ENDPOINT` | *(built-in)* | Same |
 | `DB_/WEB_/SCRAPER_MEMORY_LIMIT` | `512M`/`512M`/`1G` | Per-container caps |
 | `SCRAPER_SHM_SIZE` | `512mb` | Chromium crashes on Docker's default 64MB |
 
@@ -573,10 +690,36 @@ the connection string. Re-check `POSTGRES_PASSWORD` in `.env` — avoid `@`, `/`
 and `:` (the generated one already does).
 
 **Scraper finds 0 listings from a real portal.**
-Expected eventually — see the warning in
-[The scraping engine](#the-scraping-engine). Confirm the pipeline itself still
-works with `make scrape-demo`, then check `scrape_runs.error` and update the
-parser.
+Run `make doctor` — it names the cause instead of leaving you to guess, and
+tells apart a moved endpoint, a renamed field, a redesigned page and a blocked
+IP. Confirm the pipeline itself still works with `make scrape-demo`. The app also
+flags this on the Discovery banner: a source that answers but returns nothing is
+shown amber, not green.
+
+**ZAP / Viva Real always fail with 403.**
+Grupo ZAP blocks datacenter and VPN addresses at the edge — `make doctor` will
+say so explicitly when even the portal's front page is refused. Nothing in the
+parser can fix that; run from a residential connection, or drop those two from
+`SCRAPE_SOURCES` and use the other four.
+
+**"Scrape now" says the scraper is unreachable.**
+```bash
+docker compose ps scraper                 # up? healthy?
+docker compose logs scraper | grep control
+```
+`web` reaches the scraper at `http://scraper:8080` over the compose network. Check
+that `SCRAPE_CONTROL_TOKEN` is the *same* value for both services (it comes from
+one `.env` key, so this only breaks if you edited compose) and that
+`SCRAPE_CONTROL_ENABLED` is not `false`.
+
+**Feed is empty even though listings were scraped.**
+Almost always a city or state mismatch in Preferences. Check what the filter is
+actually looking for versus what was stored:
+```sql
+SELECT city, city_slug, state FROM preference_profiles;
+SELECT DISTINCT city, city_slug, state FROM properties;
+```
+The `city_slug` values must match exactly. Re-saving Preferences recomputes them.
 
 **Chromium crashes / `Target closed`.**
 Raise `SCRAPER_SHM_SIZE` to `1gb` and `SCRAPER_MEMORY_LIMIT` to `1.5G`.

@@ -99,11 +99,15 @@ else
   PG_PASS="$(openssl rand -base64 24 | tr -d '/+=\n')"
   JWT="$(openssl rand -base64 60 | tr -d '/+=\n' | cut -c1-64)"
   SEED_PASS="$(openssl rand -base64 12 | tr -d '/+=\n')"
+  # Guards the scraper's manual-run endpoint. Hex, so no character in it can be
+  # misread by compose interpolation or a shell.
+  CONTROL_TOKEN="$(openssl rand -hex 24)"
 
   # Fill in the placeholders (| delimiter: the values contain no pipes).
   sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASS}|" .env
   sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT}|"                   .env
   sed -i "s|^SEED_PASSWORD=.*|SEED_PASSWORD=${SEED_PASS}|"       .env
+  sed -i "s|^SCRAPE_CONTROL_TOKEN=.*|SCRAPE_CONTROL_TOKEN=${CONTROL_TOKEN}|" .env
 
   HOST_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo UTC)"
   sed -i "s|^TZ=.*|TZ=${HOST_TZ}|" .env
@@ -242,13 +246,20 @@ fi
 cat <<NEXT
   ${BOLD}Next steps${RESET}
     make logs                 follow all logs
-    make scrape               trigger a scraper run right now
+    make scrape               run the scraper now and wait for it
+    make scrape-now           run it in the background (same as the app's button)
+    make doctor               probe every portal and report what is broken
     make backup               dump the database to ./backups
-    docker compose logs -f scraper
 
   The scraper defaults to ${BOLD}SCRAPE_SOURCES=DEMO${RESET} (synthetic listings, no network
-  calls) so you can verify the pipeline first. Switch it to the real portals in
-  .env, then: docker compose up -d scraper
+  calls) so you can verify the pipeline first. To switch to the real portals:
+
+    1. set SCRAPE_SOURCES in .env, e.g. ZAP,VIVA_REAL,QUINTO_ANDAR,OLX
+    2. docker compose up -d scraper
+    3. ${BOLD}make doctor${RESET}  — confirm each one actually answers before trusting it
+
+  Portals break: set a City AND a State in Preferences, because two of them
+  scope their search by state and return the wrong region without it.
 
   Once everyone has an account, set ALLOW_REGISTRATION=false in .env.
 NEXT

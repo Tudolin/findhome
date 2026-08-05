@@ -1,5 +1,6 @@
 import type { PropertySource } from '@prisma/client';
 import { prisma } from './db.js';
+import { displayName, locationSlug, toUf } from './locations.js';
 import { logger } from './logger.js';
 import type { RawListing } from './types.js';
 
@@ -17,15 +18,25 @@ function normalize(raw: RawListing) {
   const condoFee = Math.max(0, Math.round(raw.condoFee ?? 0));
   const taxFee = Math.max(0, Math.round(raw.taxFee ?? 0));
 
+  // Portals spell the same place a dozen ways ("São Paulo", "Sao Paulo",
+  // "SÃO PAULO"). The display columns keep whatever the portal sent, because
+  // that is what reads correctly on a card; the slug columns are what the feed
+  // filter compares against, so matching never depends on accents or case.
+  const city = displayName(raw.city, 120);
+  const neighborhood = displayName(raw.neighborhood, 120) || city;
+
   return {
     externalId: raw.externalId,
     sourceUrl: raw.sourceUrl,
     title: raw.title.slice(0, 300),
     description: raw.description?.slice(0, 4000) ?? null,
     address: raw.address.slice(0, 300),
-    neighborhood: raw.neighborhood.slice(0, 120),
-    city: raw.city.slice(0, 120),
-    state: raw.state?.slice(0, 40) ?? null,
+    neighborhood,
+    neighborhoodSlug: locationSlug(neighborhood),
+    city,
+    citySlug: locationSlug(city),
+    // Normalised to a UF so "PR", "Paraná" and "parana" are one state.
+    state: toUf(raw.state),
     rentPrice,
     condoFee,
     taxFee,

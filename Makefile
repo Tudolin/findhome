@@ -11,7 +11,8 @@ export
 
 .DEFAULT_GOAL := help
 .PHONY: help setup up down restart build rebuild logs logs-web logs-scraper ps \
-        migrate seed scrape scrape-demo shell-db psql backup restore update prune status
+        migrate seed scrape scrape-now scrape-demo doctor shell-db psql backup \
+        restore update prune status scrape-status
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -53,11 +54,32 @@ migrate: ## Apply pending database migrations
 seed: ## Load demo users, party and listings
 	$(COMPOSE) run --rm migrate npm run db:seed
 
-scrape: ## Trigger a scraper run immediately (uses SCRAPE_SOURCES from .env)
-	$(COMPOSE) exec scraper node dist/cli.js
+scrape: ## Run the scraper now and wait for it:  make scrape [SOURCES=ZAP,OLX]
+	$(COMPOSE) exec scraper node dist/cli.js $(SOURCES)
+
+scrape-now: ## Run the scraper now in the BACKGROUND, via the control API
+	@$(COMPOSE) exec scraper node -e "\
+	  const t=process.env.SCRAPE_CONTROL_TOKEN||''; \
+	  fetch('http://127.0.0.1:'+(process.env.SCRAPE_CONTROL_PORT||8080)+'/run', \
+	    {method:'POST',headers:{'content-type':'application/json',...(t?{'x-scrape-token':t}:{})}, \
+	     body:JSON.stringify('$(SOURCES)'?{sources:'$(SOURCES)'.split(',')}:{})}) \
+	  .then(r=>r.json().then(d=>{console.log(r.status,JSON.stringify(d));process.exit(r.ok?0:1)})) \
+	  .catch(e=>{console.error(e.message);process.exit(1)})"
+	@echo "Follow it with: make logs-scraper"
 
 scrape-demo: ## Trigger a run against the offline DEMO parser only
 	$(COMPOSE) exec scraper node dist/cli.js DEMO
+
+scrape-status: ## Show the last run's outcome per source
+	@$(COMPOSE) exec scraper node -e "\
+	  const t=process.env.SCRAPE_CONTROL_TOKEN||''; \
+	  fetch('http://127.0.0.1:'+(process.env.SCRAPE_CONTROL_PORT||8080)+'/status', \
+	    {headers:t?{'x-scrape-token':t}:{}}) \
+	  .then(r=>r.json()).then(d=>console.log(JSON.stringify(d,null,2))) \
+	  .catch(e=>{console.error(e.message);process.exit(1)})"
+
+doctor: ## Probe every configured portal and report what is broken and why
+	$(COMPOSE) exec scraper node dist/doctor.js $(SOURCES)
 
 psql shell-db: ## Open a psql prompt on the database
 	$(COMPOSE) exec db psql -U $${POSTGRES_USER:-findhome} -d $${POSTGRES_DB:-findhome}

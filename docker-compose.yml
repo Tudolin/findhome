@@ -78,6 +78,10 @@ services:
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
       MAX_PARTY_MEMBERS: ${MAX_PARTY_MEMBERS:-6}
       TZ: ${TZ:-America/Sao_Paulo}
+      # Lets the app's "Scrape now" button reach the scraper's control API over
+      # the private network. The token never leaves the server side.
+      SCRAPER_CONTROL_URL: http://scraper:${SCRAPE_CONTROL_PORT:-8080}
+      SCRAPE_CONTROL_TOKEN: ${SCRAPE_CONTROL_TOKEN:-}
     ports:
       - '${BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-3000}:3000'
     depends_on:
@@ -112,6 +116,14 @@ services:
       SCRAPE_STALE_DAYS: ${SCRAPE_STALE_DAYS:-21}
       SCRAPE_DEFAULT_CITY: ${SCRAPE_DEFAULT_CITY:-São Paulo}
       SCRAPE_DEFAULT_STATE: ${SCRAPE_DEFAULT_STATE:-SP}
+      # Control API for manual runs. Deliberately NOT in `ports:` — it is
+      # reachable only from inside this network, which is where `web` lives.
+      SCRAPE_CONTROL_ENABLED: ${SCRAPE_CONTROL_ENABLED:-true}
+      SCRAPE_CONTROL_PORT: ${SCRAPE_CONTROL_PORT:-8080}
+      SCRAPE_CONTROL_TOKEN: ${SCRAPE_CONTROL_TOKEN:-}
+      # Escape hatches for when a portal moves its endpoint (see `make doctor`).
+      GRUPOZAP_ENDPOINT: ${GRUPOZAP_ENDPOINT:-}
+      QUINTOANDAR_ENDPOINT: ${QUINTOANDAR_ENDPOINT:-}
     depends_on:
       db:
         condition: service_healthy
@@ -120,6 +132,14 @@ services:
     # Chromium's default 64MB /dev/shm is not enough and it will crash on
     # image-heavy pages. src/browser.ts also passes --disable-dev-shm-usage.
     shm_size: ${SCRAPER_SHM_SIZE:-512mb}
+    # Probes the control API (src/healthcheck.ts). Exits 0 when the control API
+    # is switched off, so disabling it does not mark the container unhealthy.
+    healthcheck:
+      test: ['CMD', 'node', 'dist/healthcheck.js']
+      interval: 30s
+      timeout: 8s
+      start_period: 30s
+      retries: 3
     networks: [findhome]
     deploy:
       resources:

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import type { InteractionStatus } from '@prisma/client';
-import { money } from '@/lib/format';
+import { money, sourceLabel } from '@/lib/format';
 import { STATUS_DOT, STATUS_LABEL } from '@/lib/constants';
 import { updateInteraction } from '@/lib/client';
 import type { UiProperty, UiWorkspace } from '@/lib/types';
@@ -67,7 +67,7 @@ export default function PropertyCard({
             <div className="flex h-full items-center justify-center text-sm text-ink-400">No photo</div>
           )}
           <span className="absolute left-2.5 top-2.5 rounded-full bg-surface/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-700 shadow-neu-sm backdrop-blur">
-            {property.source.replace('_', ' ')}
+            {sourceLabel(property.source)}
           </span>
           {property.images.length > 1 && (
             <span className="absolute bottom-2.5 right-2.5 rounded-full bg-surface/90 px-2.5 py-1 text-[10px] font-bold text-ink-700 shadow-neu-sm backdrop-blur">
