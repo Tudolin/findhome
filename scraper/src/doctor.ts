@@ -256,6 +256,12 @@ async function probePage(
     diagnosis: '',
   };
 
+  if (config.requiresState && !target.state) {
+    probe.attempts.push(`skipped: ${config.label} has no state-less URL scheme`);
+    probe.diagnosis = `set a state for ${target.city} in Preferences — this portal scopes every search by UF`;
+    return probe;
+  }
+
   const page = await ctx.newPage();
   let reachedAPage = false;
 
@@ -353,8 +359,12 @@ async function main(): Promise<void> {
   console.log(`          citySlug=${target.citySlug} state=${target.state ?? 'NONE'} type=${target.listingType}`);
   if (targets.length > 1) console.log(`          (${targets.length} targets configured; probing the first)`);
   if (!target.state) {
-    console.log('          WARNING: no state. ZAP location ids, QuintoAndar city slugs and the OLX/');
-    console.log('          ImovelWeb/Chaves na Mao URL schemes all need one. Set it in Preferences.');
+    console.log('');
+    console.log(`  >>> NO STATE SET for ${target.city}. Fix this before reading anything below. <<<`);
+    console.log('      Every portal scopes its search by UF: ZAP builds a location id from it,');
+    console.log('      QuintoAndar a city slug, and OLX / ImovelWeb / Chaves na Mao put it in the');
+    console.log('      URL. Without it results are broader, wrong, or empty.');
+    console.log('      Open Preferences in the app, pick the state, save.');
   }
   console.log(`ua:       ${config.userAgent}`);
 

@@ -80,9 +80,13 @@ export const config = {
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   ),
   /**
-   * Fallback search target used when no PreferenceProfile exists yet, so a
-   * fresh install still pulls something down on the first run. Also supplies
-   * the state for profiles saved before the state field existed.
+   * Fallback search target used when no PreferenceProfile exists yet, so a fresh
+   * install still pulls something down on the first run.
+   *
+   * These two are a pair and are only ever used together (see targets.ts). In
+   * particular the state is NOT used to fill a gap in a saved profile: a profile
+   * for Curitiba inheriting "SP" produces URLs that answer 200 with São Paulo
+   * listings, which is the worst kind of wrong.
    */
   defaultCity: env('SCRAPE_DEFAULT_CITY', 'São Paulo'),
   defaultState: env('SCRAPE_DEFAULT_STATE', 'SP'),

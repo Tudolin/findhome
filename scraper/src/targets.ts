@@ -11,9 +11,20 @@ import type { SearchTarget } from './types.js';
  *
  * Every location that comes out of here is canonical: `citySlug` and
  * `neighborhoodSlugs` are `locationSlug()` values and `state` is a two-letter
- * UF. Profiles saved before the state field existed fall back to
- * SCRAPE_DEFAULT_STATE, which is the only place a default is applied — the
- * parsers themselves never guess a state.
+ * UF.
+ *
+ * Nothing here ever guesses a state. SCRAPE_DEFAULT_STATE applies only to the
+ * no-profile fallback target below, where it is paired with SCRAPE_DEFAULT_CITY
+ * and the two are therefore consistent by construction. A profile that names a
+ * city but no state gets `state: null`.
+ *
+ * That restraint is the whole point. An earlier version filled the gap with
+ * SCRAPE_DEFAULT_STATE, so a profile for "Curitiba" inherited "SP" and the
+ * parsers dutifully built `estado-sp/curitiba` (OLX), `sp-curitiba` (Chaves na
+ * Mão) and `curitiba-sp.html` (ImovelWeb) — URLs that answer HTTP 200 and return
+ * São Paulo listings, or nothing. A confidently wrong answer is worse than a
+ * broad one, and much worse than an honest gap: each parser widens its search
+ * when the state is missing, and the app says so on the Preferences screen.
  */
 export async function buildSearchTargets(): Promise<SearchTarget[]> {
   const profiles = await prisma.preferenceProfile.findMany();
@@ -43,9 +54,8 @@ export async function buildSearchTargets(): Promise<SearchTarget[]> {
     const citySlug = locationSlug(city);
     if (!citySlug) continue;
 
-    // The profile's own state wins; the env default only covers profiles saved
-    // before the field existed.
-    const state = toUf(profile.state) ?? toUf(config.defaultState);
+    // The profile's own state, or nothing. See the note at the top of the file.
+    const state = toUf(profile.state);
     const neighborhoods = dedupeBySlug(profile.neighborhoods);
 
     // Two cities can share a name across states, so the state belongs in the key.

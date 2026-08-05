@@ -1,6 +1,7 @@
 import type { Page } from 'playwright-core';
 import { buildPageParser, type PageParserConfig } from './page.js';
 import { clean, detectPetPolicy, idText, toInt, toMoney, unique } from './util.js';
+import { toUf } from '../locations.js';
 import type { RawListing, SearchTarget } from '../types.js';
 
 /**
@@ -127,14 +128,39 @@ function spec(details: string[], pattern: RegExp): number {
   return 0;
 }
 
-/** "Santos, Boqueirão" -> { city: "Santos", neighborhood: "Boqueirão" } */
+/**
+ * OLX writes a card's location in two different formats depending on which
+ * results page it came from:
+ *
+ *   "Santos, Boqueirão"       city, neighborhood      (regional results)
+ *   "Curitiba - PR"           city and UF             (national results)
+ *   "Curitiba - PR, Centro"   both                    (occasionally)
+ *
+ * The " - UF" suffix has to be stripped, or the city reads as "Curitiba - PR",
+ * whose slug is `curitiba-pr` and matches no target — every listing gets dropped
+ * by the city guard even though it is the right city. The UF is worth keeping:
+ * on a national search it is the only place the state is stated.
+ */
 function splitLocation(value: string, fallbackCity: string) {
   const parts = value
     .split(',')
     .map((p) => clean(p, 120))
     .filter(Boolean);
-  if (parts.length >= 2) return { city: parts[0], neighborhood: parts.slice(1).join(', ') };
-  return { city: parts[0] || fallbackCity, neighborhood: parts[0] || fallbackCity };
+
+  let city = parts[0] || fallbackCity;
+  let uf: string | null = null;
+
+  const suffix = city.match(/^(.*?)\s*-\s*([A-Za-z]{2})$/);
+  if (suffix) {
+    const parsed = toUf(suffix[2]);
+    if (parsed) {
+      city = clean(suffix[1], 120) || fallbackCity;
+      uf = parsed;
+    }
+  }
+
+  const neighborhood = parts.length >= 2 ? parts.slice(1).join(', ') : city;
+  return { city, neighborhood, uf };
 }
 
 /** Pulls "Condomínio R$ 500" style extras out of the price block. */
@@ -153,7 +179,7 @@ export function mapCard(card: Card, target: SearchTarget): RawListing | null {
   if (!rentPrice) return null;
 
   const sourceUrl = card.href.startsWith('http') ? card.href : `${ORIGIN}${card.href}`;
-  const { city, neighborhood } = splitLocation(card.location, target.city);
+  const { city, neighborhood, uf } = splitLocation(card.location, target.city);
   const title = clean(card.title, 200);
 
   return {
@@ -166,7 +192,8 @@ export function mapCard(card: Card, target: SearchTarget): RawListing | null {
     address: neighborhood,
     neighborhood,
     city,
-    state: target.state,
+    // The card's own UF wins: on a national search it is the only source of it.
+    state: uf ?? target.state,
     rentPrice,
     condoFee: priceExtra(card.priceInfo, /condom/i),
     taxFee: priceExtra(card.priceInfo, /iptu/i),

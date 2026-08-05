@@ -30,6 +30,14 @@ export type PageParserConfig = {
    * their URL schemes, so the first that returns records wins and is remembered.
    */
   urls: (target: SearchTarget, page: number) => string[];
+  /**
+   * Set when the portal's URL scheme cannot be built without a UF, so there is
+   * no such thing as a state-less search. Chaves na Mão is the case: its path is
+   * `/imoveis-para-alugar/{uf}-{cidade}/` and dropping the UF gives a page that
+   * answers 200 with no offers on it. Without this flag that is indistinguishable
+   * from "the structured data moved", and the doctor blames the wrong thing.
+   */
+  requiresState?: boolean;
   /** Pulls listings out of a loaded page. Runs once per result page. */
   extract: (page: Page, target: SearchTarget) => Promise<RawListing[]>;
 };
@@ -98,6 +106,13 @@ export function buildPageParser(source: Parser['source'], config: PageParserConf
     label: config.label,
 
     async search(target: SearchTarget, ctx: ScrapeContext): Promise<RawListing[]> {
+      if (config.requiresState && !target.state) {
+        throw new Error(
+          `${config.label} scopes every search by state and cannot be searched without one — ` +
+            `set a state for ${target.city} in Preferences`,
+        );
+      }
+
       const page = await ctx.newPage();
       page.setDefaultNavigationTimeout(45_000);
 

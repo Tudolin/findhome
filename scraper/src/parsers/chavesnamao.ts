@@ -31,15 +31,18 @@ import type { RawListing, SearchTarget } from '../types.js';
 
 const ORIGIN = 'https://www.chavesnamao.com.br';
 
-/** Their location segment is "uf-cidade" ("sp-sao-paulo"), verified live. */
+/**
+ * Their location segment is "uf-cidade" ("sp-sao-paulo", "pr-curitiba"),
+ * verified live. The UF is not optional: `/imoveis-para-alugar/curitiba/`
+ * answers 200 with an empty result set rather than redirecting, which is why the
+ * config below sets `requiresState`.
+ */
 function urls(target: SearchTarget, pageNumber: number): string[] {
   const section = target.listingType === 'SALE' ? 'imoveis-a-venda' : 'imoveis-para-alugar';
   const paged = pageNumber > 1 ? `?pg=${pageNumber}` : '';
+  const uf = (target.state ?? '').toLowerCase();
 
-  return [
-    ...(target.state ? [`${ORIGIN}/${section}/${target.state.toLowerCase()}-${target.citySlug}/${paged}`] : []),
-    `${ORIGIN}/${section}/${target.citySlug}/${paged}`,
-  ];
+  return [`${ORIGIN}/${section}/${uf}-${target.citySlug}/${paged}`];
 }
 
 type Offer = Record<string, unknown>;
@@ -155,6 +158,7 @@ export const CHAVES_NA_MAO_CONFIG: PageParserConfig = {
   label: 'Chaves na Mão',
   origin: ORIGIN,
   urls,
+  requiresState: true,
   async extract(page: Page, target: SearchTarget): Promise<RawListing[]> {
     const offers = extractOffers(await collectPayloads(page));
     return offers.map((offer) => mapOffer(offer, target)).filter((l): l is RawListing => l !== null);
