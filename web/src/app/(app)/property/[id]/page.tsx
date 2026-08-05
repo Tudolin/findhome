@@ -53,22 +53,22 @@ export default async function PropertyPage({ params }: { params: Params }) {
   )}`;
 
   const specs: Array<[string, string | number]> = [
-    ['Bedrooms', property.bedrooms],
-    ['Bathrooms', property.bathrooms],
-    ['Parking', property.parkingSpots],
-    ['Area', `${property.sqm} m²`],
+    [t.property.bedrooms, property.bedrooms],
+    [t.property.bathrooms, property.bathrooms],
+    [t.property.parking, property.parkingSpots],
+    [t.property.area, `${property.sqm} m²`],
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href="/dashboard" className="btn-ghost">
-          ← Back to discovery
+          {t.property.back}
         </Link>
         <div className="flex items-center gap-3">
           {ws.kind === 'PARTY' && <ScoreBadge score={property.partyScore} />}
           <a href={property.sourceUrl} target="_blank" rel="noreferrer" className="btn-ghost">
-            Open on {sourceLabel(property.source)} ↗
+            {t.property.openOn(sourceLabel(property.source))}
           </a>
         </div>
       </div>
@@ -89,7 +89,7 @@ export default async function PropertyPage({ params }: { params: Params }) {
               rel="noreferrer"
               className="mt-1 inline-block text-xs font-semibold text-brand-700 hover:text-brand-800"
             >
-              View on map ↗
+              {t.property.viewOnMap}
             </a>
 
             <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -116,8 +116,11 @@ export default async function PropertyPage({ params }: { params: Params }) {
             )}
 
             <p className="mt-5 text-xs text-ink-400">
-              Added {relativeDate(property.createdAt)} · last seen {relativeDate(property.lastSeenAt)} · source id{' '}
-              <span className="font-mono">{property.externalId}</span>
+              {t.property.added(
+                relativeDate(property.createdAt),
+                relativeDate(property.lastSeenAt),
+                property.externalId,
+              )}
             </p>
           </div>
 
@@ -159,22 +162,22 @@ export default async function PropertyPage({ params }: { params: Params }) {
 
         <div className="space-y-6">
           <div className="card p-6">
-            <h2 className="mb-4 text-sm font-bold text-ink-800">Price breakdown</h2>
+            <h2 className="mb-4 text-sm font-bold text-ink-800">{t.property.priceBreakdown}</h2>
             <dl className="space-y-2.5 text-sm">
               <div className="flex justify-between">
-                <dt className="text-ink-600">Rent</dt>
+                <dt className="text-ink-600">{t.property.rent}</dt>
                 <dd className="font-semibold tabular-nums text-ink-800">{money(property.rentPrice)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-ink-600">Condo fee</dt>
+                <dt className="text-ink-600">{t.property.condoFee}</dt>
                 <dd className="font-semibold tabular-nums text-ink-800">{money(property.condoFee)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-ink-600">Taxes (IPTU etc.)</dt>
+                <dt className="text-ink-600">{t.property.taxes}</dt>
                 <dd className="font-semibold tabular-nums text-ink-800">{money(property.taxFee)}</dd>
               </div>
               <div className="well mt-4 flex items-baseline justify-between px-4 py-3">
-                <dt className="text-xs font-bold uppercase tracking-wider text-ink-600">Total / month</dt>
+                <dt className="text-xs font-bold uppercase tracking-wider text-ink-600">{t.property.total}</dt>
                 <dd className="text-xl font-black tabular-nums text-brand-800">{money(property.totalPrice)}</dd>
               </div>
               {property.sqm > 0 && (

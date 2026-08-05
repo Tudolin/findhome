@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { Suspense } from 'react';
 import FeedControls from '@/components/FeedControls';
 import PropertyCard from '@/components/PropertyCard';
 import ScrapeStatus from '@/components/ScrapeStatus';
@@ -91,9 +90,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </div>
       </div>
 
-      <Suspense fallback={<div className="skeleton mb-6 h-[74px]" />}>
-        <FeedControls sources={facets.sources} neighborhoods={facets.neighborhoods} />
-      </Suspense>
+      {/* No <Suspense> around this.
+          `useSearchParams()` only needs a boundary on a statically prerendered
+          page, and this one is force-dynamic. The boundary was re-mounting the
+          toolbar on every navigation, which is half of why it stopped
+          responding after the first filter change. */}
+      <FeedControls sources={facets.sources} neighborhoods={facets.neighborhoods} />
 
       <ScrapeStatus runs={runs} running={scraping} />
 

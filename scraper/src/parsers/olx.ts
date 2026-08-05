@@ -117,6 +117,18 @@ function idFromHref(href: string): string {
 }
 
 /**
+ * Cards carry a thumbnail; the CDN serves the full frame under /images/.
+ * Measured on the same file:
+ *
+ *   /thumbs700x500/   667x500    40 kB
+ *   /thumbs1200x900/  1200x900   95 kB
+ *   /images/          1280x960  143 kB   <- used here
+ */
+function upgradeImage(url: string): string {
+  return url.replace(/\/thumbs\d+x\d+\//, '/images/');
+}
+
+/**
  * Spec chips carry a screen-reader label: "54 metros quadrados", "2 quartos",
  * "1 vaga de garagem". Matching on the noun is more durable than relying on the
  * chips arriving in a fixed order.
@@ -201,7 +213,7 @@ export function mapCard(card: Card, target: SearchTarget): RawListing | null {
     bathrooms: spec(card.details, /banheiro/i),
     parkingSpots: spec(card.details, /vaga|garagem/i),
     sqm: spec(card.details, /metros quadrados|m²/i),
-    images: unique([clean(card.image, 500)].filter(Boolean)),
+    images: unique([upgradeImage(clean(card.image, 500))].filter(Boolean)),
     amenities: [],
     petFriendly: detectPetPolicy(title),
     listingType: target.listingType,

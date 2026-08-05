@@ -140,6 +140,8 @@ services:
       WHATSAPP_TEMPLATE: ${WHATSAPP_TEMPLATE:-}
       WHATSAPP_TEMPLATE_LANG: ${WHATSAPP_TEMPLATE_LANG:-pt_BR}
       WHATSAPP_CALLMEBOT_APIKEY: ${WHATSAPP_CALLMEBOT_APIKEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       ALERT_MAX_AGE_HOURS: ${ALERT_MAX_AGE_HOURS:-48}
       # Coordinates for the map, for the portals that publish none. Off by
       # default because Nominatim is donated infrastructure — see src/geocode.ts.

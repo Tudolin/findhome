@@ -148,6 +148,9 @@ export async function getMapPins(ws: Workspace) {
         source: true,
         latitude: true,
         longitude: true,
+        // First photo only: the map shows a thumbnail per listing, and shipping
+        // twelve URLs each would bloat the payload for nothing.
+        images: true,
       },
     }),
     prisma.property.count({ where: { ...where, latitude: null } }),
@@ -162,11 +165,12 @@ export async function getMapPins(ws: Workspace) {
 
   return {
     withoutCoords,
-    pins: rows.map((row) => ({
+    pins: rows.map(({ images, ...row }) => ({
       ...row,
       // Non-null by construction: the query filters them out.
       latitude: row.latitude as number,
       longitude: row.longitude as number,
+      image: images[0] ?? null,
       pinned: pinnedIds.has(row.id),
     })),
   };

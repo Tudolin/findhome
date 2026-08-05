@@ -391,10 +391,50 @@ Enabled per workspace on the Preferences screen (switch, number, and a cap on ho
 many listings one message may carry); the provider is server-wide config:
 
 ```bash
-WHATSAPP_PROVIDER=webhook   # your own gateway: Evolution API, Z-API, n8n, …
-WHATSAPP_PROVIDER=cloud     # Meta's official WhatsApp Cloud API
-WHATSAPP_PROVIDER=callmebot # personal-use bridge, easiest to get working
+WHATSAPP_PROVIDER=callmebot # free, zero infrastructure — start here
+WHATSAPP_PROVIDER=telegram  # free and official, but Telegram rather than WhatsApp
+WHATSAPP_PROVIDER=webhook   # your own gateway: Evolution API, WPPConnect, n8n, …
+WHATSAPP_PROVIDER=cloud     # Meta's official Cloud API — paid for this use case
 ```
+
+### Which one if you do not want to pay for anything
+
+There is no free, official, unsolicited-message WhatsApp API. Meta's Cloud API is
+the only official route and it bills per template message in Brazil, on top of
+needing a verified business account. So the realistic options are:
+
+| | Cost | Setup | Catch |
+|---|---|---|---|
+| **`callmebot`** | free | 2 minutes, no infra | Unofficial, rate-limited, personal use only. One number. |
+| **`telegram`** | free | 5 minutes, no infra | Not WhatsApp — but official, unlimited and it will not break. |
+| **`webhook`** + self-hosted gateway | free to run | a container on the box you already have | Unofficial WhatsApp clients (Baileys/WPPConnect) log in as *your* account and **can get the number banned**. |
+| **`cloud`** | paid | business verification | Correct and reliable, but not free. |
+
+`callmebot` is the fastest thing that puts a message on your phone tonight:
+
+```bash
+# 1. save +34 644 51 95 23 as a contact
+# 2. send it exactly:  I allow callmebot to send me messages
+# 3. it replies with your apikey
+WHATSAPP_PROVIDER=callmebot
+WHATSAPP_CALLMEBOT_APIKEY=123456
+# then put your own number in the WhatsApp field on the Preferences screen
+```
+
+`telegram` is what to switch to when you want it to keep working:
+
+```bash
+# 1. message @BotFather, /newbot, copy the token
+# 2. send your new bot any message
+# 3. open https://api.telegram.org/bot<TOKEN>/getUpdates -> result[0].message.chat.id
+WHATSAPP_PROVIDER=telegram
+TELEGRAM_BOT_TOKEN=123456:AA…
+# put that chat id in the Preferences field, or pin it here for every workspace:
+TELEGRAM_CHAT_ID=
+```
+
+A negative chat id is a Telegram group — worth using for a party, so both people
+get the alert in one place.
 
 Three properties it is built around:
 
@@ -425,8 +465,18 @@ Three properties it is built around:
 
 `/map` plots every listing that has coordinates on an OpenStreetMap, drawn with
 Leaflet. Markers are **price labels**, not teardrops — comparing what costs what,
-where, is the only reason to look at a map of listings. Pinned listings are
-highlighted, and clicking one opens the listing.
+where, is the only reason to look at a map of listings. Clicking one opens a
+popup with the photo, address and specs.
+
+Beside the map is a **legend**: every plotted listing, cheapest first, with a
+thumbnail. It is not decoration — a price pin tells you *what*, the legend tells
+you *which*, and it is the only way to reach a listing whose marker sits
+underneath another one. Clicking a row flies to that marker and opens its popup.
+
+The initial zoom fits the **5th–95th percentile** of the pins rather than their
+full extent. Fitting the raw min/max means one mislocated listing — a vague
+address the geocoder resolved to the middle of the state — zooms the city down to
+a dot. Trimming the tails keeps the view on the city you actually chose.
 
 Two decisions worth knowing about:
 

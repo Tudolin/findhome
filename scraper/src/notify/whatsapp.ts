@@ -26,11 +26,13 @@ const log = logger('whatsapp');
  * no AlertDelivery row means the listing is simply retried next time.
  */
 
-export type WhatsAppProvider = 'webhook' | 'cloud' | 'callmebot' | 'none';
+export type WhatsAppProvider = 'webhook' | 'cloud' | 'callmebot' | 'telegram' | 'none';
+
+const KNOWN: WhatsAppProvider[] = ['webhook', 'cloud', 'callmebot', 'telegram'];
 
 export function configuredProvider(): WhatsAppProvider {
   const raw = env('WHATSAPP_PROVIDER', '').toLowerCase();
-  if (raw === 'webhook' || raw === 'cloud' || raw === 'callmebot') return raw;
+  if ((KNOWN as string[]).includes(raw)) return raw as WhatsAppProvider;
   if (raw === '' || raw === 'none' || raw === 'off') return 'none';
   log.warn(`unknown WHATSAPP_PROVIDER "${raw}" — alerts disabled`);
   return 'none';
@@ -143,13 +145,53 @@ async function sendCallMeBot(to: string, text: string): Promise<SendResult> {
   return post(`https://api.callmebot.com/whatsapp.php?${query}`, { method: 'GET' });
 }
 
-/** Digits only, no plus — every provider here wants it that way. */
+/**
+ * Telegram, for when there is no free WhatsApp route left.
+ *
+ * Not WhatsApp, and that is the point: Telegram's Bot API is official, free with
+ * no message charges, needs no business verification, no 24-hour window and no
+ * approved templates. Setup is two steps — talk to @BotFather for a token, then
+ * message your bot once and read your chat id from
+ * api.telegram.org/bot<token>/getUpdates.
+ *
+ * The destination is the chat id, which is a number like a phone number, so it
+ * goes in the same per-workspace field. A negative id is a group, which is the
+ * useful case for a party: both people get the alert in one place.
+ */
+async function sendTelegram(to: string, text: string): Promise<SendResult> {
+  const token = envOptional('TELEGRAM_BOT_TOKEN');
+  if (!token) return { ok: false, detail: 'TELEGRAM_BOT_TOKEN is not set' };
+
+  const chatId = envOptional('TELEGRAM_CHAT_ID') ?? to;
+
+  return post(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      // The composed message uses *bold* markers, which is Markdown in both
+      // WhatsApp and Telegram. `disable_web_page_preview` keeps a five-listing
+      // digest from turning into five link cards.
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true,
+    }),
+  });
+}
+
+/**
+ * Digits only, no plus — every provider here wants it that way.
+ *
+ * Telegram chat ids may be negative (groups), so a leading minus survives.
+ */
 export function normalizePhone(value: string | null | undefined): string | null {
-  const digits = (value ?? '').replace(/\D/g, '');
+  const raw = (value ?? '').trim();
+  const negative = raw.startsWith('-');
+  const digits = raw.replace(/\D/g, '');
   // Shortest plausible international number; guards against a half-typed field
-  // turning into a message to nobody.
-  if (digits.length < 10 || digits.length > 15) return null;
-  return digits;
+  // turning into a message to nobody. Telegram ids are 9-10 digits.
+  if (digits.length < 9 || digits.length > 15) return null;
+  return negative ? `-${digits}` : digits;
 }
 
 export async function sendWhatsApp(to: string, text: string): Promise<SendResult> {
@@ -164,7 +206,9 @@ export async function sendWhatsApp(to: string, text: string): Promise<SendResult
       ? await sendWebhook(phone, text)
       : provider === 'cloud'
         ? await sendCloud(phone, text)
-        : await sendCallMeBot(phone, text);
+        : provider === 'telegram'
+          ? await sendTelegram(phone, text)
+          : await sendCallMeBot(phone, text);
 
   if (result.ok) log.info(`sent to ${phone.slice(0, 4)}…${phone.slice(-2)} via ${provider}`);
   else log.warn(`send to ${phone.slice(0, 4)}…${phone.slice(-2)} via ${provider} failed: ${result.detail}`);

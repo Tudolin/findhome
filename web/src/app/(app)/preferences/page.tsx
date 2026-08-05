@@ -19,7 +19,7 @@ export const metadata = { title: 'Preferences · FindHome' };
  */
 function whatsappConfigured(): boolean {
   const provider = (process.env.WHATSAPP_PROVIDER ?? '').trim().toLowerCase();
-  return provider === 'webhook' || provider === 'cloud' || provider === 'callmebot';
+  return ['webhook', 'cloud', 'callmebot', 'telegram'].includes(provider);
 }
 
 export default async function PreferencesPage() {

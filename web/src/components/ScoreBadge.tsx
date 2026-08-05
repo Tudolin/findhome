@@ -1,4 +1,7 @@
+'use client';
+
 import clsx from 'clsx';
+import { useT } from './LocaleProvider';
 import type { PartyScore } from '@/lib/scoring';
 
 /**
@@ -9,36 +12,40 @@ import type { PartyScore } from '@/lib/scoring';
  * Hovering shows the breakdown so the number never looks arbitrary.
  */
 export default function ScoreBadge({ score, compact = false }: { score: PartyScore; compact?: boolean }) {
+  const t = useT();
+
   const tone =
     score.vetoed || score.score < 30
       ? 'text-danger'
       : score.score >= 70
-        ? 'text-brand-800'
+        ? 'text-brand-700'
         : score.score >= 45
           ? 'text-warning'
           : 'text-ink-600';
 
   const title = [
-    `Match score ${score.score}/100`,
+    `${t.property.partyScore} ${score.score}/100`,
     score.avgRating != null
-      ? `avg ${score.avgRating}★ from ${score.ratedCount}/${score.memberCount} members`
-      : 'not rated yet',
-    score.conflict ? `disagreement: ${score.spread}★ apart` : null,
-    score.vetoed ? 'archived by a member' : null,
+      ? `${score.avgRating}★ (${score.ratedCount}/${score.memberCount})`
+      : t.property.rating.toLowerCase(),
+    score.conflict ? `${t.property.needsATalk}: ${score.spread}★` : null,
+    score.vetoed ? t.status.REJECTED : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
   return (
     <span
-      className={clsx('chip bg-surface shadow-neu-inset-sm tabular-nums', tone)}
+      className={clsx('chip bg-surface tabular-nums shadow-neu-inset-sm', tone)}
       title={title}
       aria-label={title}
     >
       <strong className="text-sm font-black leading-none">{score.score}</strong>
-      {!compact && <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">match</span>}
-      {score.conflict && <span title="Members disagree by 3+ stars">⚡</span>}
-      {score.vetoed && <span title="Archived by a member">🚫</span>}
+      {!compact && (
+        <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">{t.property.partyScore}</span>
+      )}
+      {score.conflict && <span title={t.property.needsATalk}>⚡</span>}
+      {score.vetoed && <span title={t.status.REJECTED}>🚫</span>}
     </span>
   );
 }

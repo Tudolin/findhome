@@ -104,6 +104,21 @@ function feature(features: string[], pattern: RegExp): number {
   return 0;
 }
 
+/**
+ * Cards link the 360px thumbnail; the CDN takes any size in the path.
+ * Measured on the same file:
+ *
+ *   /360x266/     360x266    19 kB
+ *   /720x532/     720x532    62 kB
+ *   /1200x1200/  1179x824   140 kB   <- used here (aspect is preserved)
+ *
+ * The `?isFirstImage=true` query is dropped too — it changes nothing about the
+ * response and would otherwise be stored as part of the URL.
+ */
+function upgradeImage(url: string): string {
+  return url.replace(/\/\d+x\d+\//, '/1200x1200/').split('?')[0];
+}
+
 /** "Jardim Everest, São Paulo" -> { neighborhood, city } */
 function splitLocation(value: string, fallbackCity: string) {
   const parts = value
@@ -171,7 +186,7 @@ export function mapCard(card: Card, target: SearchTarget): RawListing | null {
     parkingSpots: feature(card.features, /vaga|garagem|cochera/i),
     // "1360 m² tot." — the total-area chip is the only area chip on most cards.
     sqm: feature(card.features, /m²/i),
-    images: unique(card.images.map((i) => clean(i, 500)).filter(Boolean)).slice(0, 12),
+    images: unique(card.images.map((i) => upgradeImage(clean(i, 500))).filter(Boolean)).slice(0, 12),
     amenities: [],
     petFriendly: detectPetPolicy(description),
     listingType: target.listingType,

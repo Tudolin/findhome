@@ -57,6 +57,18 @@ function splitRegion(value: unknown): { city: string; uf: string | null } {
   return { city: parts[0], uf: toUf(parts[1]) };
 }
 
+/**
+ * The structured data links a 340px thumbnail; the path segment is the size.
+ * Measured on the same file:
+ *
+ *   /imn/0340X0250/   340x250     4 kB
+ *   /imn/0800X0600/   800x600    12 kB
+ *   /imn/1600X1200/  1600x1024   27 kB   <- used here (aspect is preserved)
+ */
+function upgradeImage(url: string): string {
+  return url.replace(/\/imn\/\d+X\d+\//i, '/imn/1600X1200/');
+}
+
 /** The listing id is the /id-NNNNNNNN/ segment of the URL. */
 function idFromUrl(url: string): string {
   const match = url.match(/\/id-(\d+)/);
@@ -123,7 +135,7 @@ export function mapOffer(offer: Offer, target: SearchTarget): RawListing | null 
     parkingSpots: 0,
     // "112m²" — toInt takes the leading digits.
     sqm: toInt(floorSize.unitText ?? floorSize.value) || sqmFromUrl,
-    images: unique([image].filter(Boolean)),
+    images: unique([upgradeImage(image)].filter(Boolean)),
     amenities: [],
     petFriendly: detectPetPolicy(title),
     latitude: Number.isFinite(latitude) ? latitude : null,

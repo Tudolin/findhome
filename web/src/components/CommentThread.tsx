@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { postComment } from '@/lib/client';
 import { relativeDate } from '@/lib/format';
+import { useT } from './LocaleProvider';
 
 export type ThreadComment = {
   id: string;
@@ -24,6 +25,7 @@ export default function CommentThread({
   currentUserId: string;
   isParty: boolean;
 }) {
+  const t = useT();
   const router = useRouter();
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,15 +78,15 @@ export default function CommentThread({
           );
         })}
         {comments.length === 0 && (
-          <li className="rounded-xl px-4 py-6 text-center text-sm text-ink-400">No messages yet.</li>
+          <li className="rounded-xl px-4 py-6 text-center text-sm text-ink-400">{t.property.noComments}</li>
         )}
       </ul>
 
       <form onSubmit={submit} className="space-y-3">
         <textarea
           className="input min-h-[84px] resize-y"
-          placeholder={isParty ? 'Write something for the party…' : 'Add a note…'}
-          aria-label="New message"
+          placeholder={t.property.commentPlaceholder}
+          aria-label={t.property.commentPlaceholder}
           maxLength={2000}
           value={body}
           onChange={(e) => setBody(e.target.value)}

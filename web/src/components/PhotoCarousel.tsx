@@ -35,15 +35,23 @@ export default function PhotoCarousel({ images, alt }: { images: string[]; alt: 
   return (
     <div>
       <div className="card p-3">
-        <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-surface-sunken shadow-neu-inset-sm">
-          {/* ListingImage, not <img>: the OLX CDN 403s any request that carries
-              our Referer — see the note in ListingImage.tsx. */}
+        {/* Taller than 16:10: listing photos are often portrait, and a wide box
+            plus object-contain would letterbox them down to a stamp. */}
+        <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-surface-sunken shadow-neu-inset-sm">
+          {/* object-CONTAIN, not cover.
+              `cover` crops whatever does not fit the 16:10 box, which on a
+              portrait photo of a room reads as an arbitrary zoom into the middle
+              of it — the listing's own framing is lost. `contain` shows the whole
+              frame and letterboxes the remainder against the sunken surface.
+
+              ListingImage, not <img>: the OLX CDN 403s any request carrying our
+              Referer — see the note in ListingImage.tsx. */}
           <ListingImage
             src={images[index]}
             alt={`${alt} — ${index + 1}`}
             eager
             fallback={t.card.noPhoto}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain"
           />
 
           {count > 1 && (

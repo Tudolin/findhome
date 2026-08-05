@@ -10,6 +10,7 @@ import ProsConsEditor from './ProsConsEditor';
 import StarRating from './StarRating';
 import StatusChip from './StatusChip';
 import StatusPicker from './StatusPicker';
+import { useT } from './LocaleProvider';
 
 /**
  * The current user's own review of a property, plus a read-only column per
@@ -26,6 +27,7 @@ export default function PropertyReview({
   others: UiInteraction[];
   workspace: UiWorkspace;
 }) {
+  const t = useT();
   const router = useRouter();
   const [status, setStatus] = useState<InteractionStatus | null>(mine?.status ?? null);
   const [rating, setRating] = useState<number | null>(mine?.rating ?? null);
@@ -71,9 +73,9 @@ export default function PropertyReview({
     <div className="space-y-5">
       <div className="card p-6">
         <div className="mb-5 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-bold text-ink-800">Your review</h2>
+          <h2 className="text-sm font-bold text-ink-800">{t.property.yourReview}</h2>
           <div className="flex items-center gap-2">
-            {saved && <span className="chip tint-pro !text-[10px]">Saved ✓</span>}
+            {saved && <span className="chip tint-pro !text-[10px]">{t.property.saved}</span>}
             {mine && (
               <button type="button" className="btn-ghost !py-1.5 !text-xs" onClick={remove} disabled={busy}>
                 Clear
@@ -83,7 +85,7 @@ export default function PropertyReview({
         </div>
 
         <div className="mb-5">
-          <p className="label">Status</p>
+          <p className="label">{t.property.status}</p>
           <StatusPicker
             value={status}
             disabled={busy}
@@ -95,7 +97,7 @@ export default function PropertyReview({
         </div>
 
         <div className="mb-6">
-          <p className="label">Your rating</p>
+          <p className="label">{t.property.rating}</p>
           <StarRating
             value={rating}
             onChange={(r) => {

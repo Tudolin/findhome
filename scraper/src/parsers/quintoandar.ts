@@ -52,8 +52,18 @@ const ENDPOINT_CANDIDATES = OVERRIDE
       'https://apigw.prod.quintoandar.com.br/house-listing-search/v2/search/list',
     ];
 
-/** Verified to serve the bare filenames returned in coverImage / imageList. */
-const IMAGE_BASE = 'https://www.quintoandar.com.br/img/med';
+/**
+ * Their CDN takes a size segment in the path. Measured on the same file:
+ *
+ *   /img/med/       450x300    3 kB
+ *   /img/800x600/   800x600    8 kB
+ *   /img/1024x768/  1024x768  13 kB
+ *   /img/xxl/       1152x768  14 kB   <- used here
+ *
+ * `med` is what their own cards use, and at 450px wide it is visibly soft the
+ * moment it fills a detail view. `xxl` costs 11 kB more for 2.5x the pixels.
+ */
+const IMAGE_BASE = 'https://www.quintoandar.com.br/img/xxl';
 
 type Hit = Record<string, unknown>;
 

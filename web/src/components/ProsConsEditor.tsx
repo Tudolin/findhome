@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import clsx from 'clsx';
+import { useT } from './LocaleProvider';
 import { QUICK_CONS, QUICK_PROS } from '@/lib/constants';
 
 /**
@@ -22,6 +23,7 @@ export default function ProsConsEditor({
   onChange: (next: { pros: string[]; cons: string[] }) => void;
   disabled?: boolean;
 }) {
+  const t = useT();
   const [draftPro, setDraftPro] = useState('');
   const [draftCon, setDraftCon] = useState('');
 
@@ -65,7 +67,7 @@ export default function ProsConsEditor({
             {label} <span className="opacity-50">×</span>
           </button>
         ))}
-        {values.length === 0 && <span className="text-xs text-ink-400">Nothing yet</span>}
+        {values.length === 0 && <span className="text-xs text-ink-400">—</span>}
       </div>
 
       <div className="mb-3 flex flex-wrap gap-1.5">
@@ -87,8 +89,8 @@ export default function ProsConsEditor({
       <div className="flex gap-2">
         <input
           className="input !py-2 text-xs"
-          placeholder={kind === 'pros' ? 'Add a pro…' : 'Add a con…'}
-          aria-label={kind === 'pros' ? 'Add a pro' : 'Add a con'}
+          placeholder={kind === 'pros' ? t.property.addPro : t.property.addCon}
+          aria-label={kind === 'pros' ? t.property.addPro : t.property.addCon}
           value={draft}
           disabled={disabled}
           maxLength={60}
