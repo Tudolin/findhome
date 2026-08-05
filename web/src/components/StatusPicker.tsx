@@ -2,7 +2,8 @@
 
 import clsx from 'clsx';
 import type { InteractionStatus } from '@prisma/client';
-import { STATUS_DOT, STATUS_LABEL } from '@/lib/constants';
+import { STATUS_DOT } from '@/lib/constants';
+import { useT } from './LocaleProvider';
 
 const CHOICES: InteractionStatus[] = ['INTERESTED', 'FAVORITE', 'VISIT_SCHEDULED', 'APPLIED', 'REJECTED'];
 
@@ -15,6 +16,8 @@ export default function StatusPicker({
   onChange: (status: InteractionStatus) => void;
   disabled?: boolean;
 }) {
+  const t = useT();
+
   return (
     <div className="flex flex-wrap gap-2">
       {CHOICES.map((status) => {
@@ -32,7 +35,7 @@ export default function StatusPicker({
             )}
           >
             <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[status])} />
-            {STATUS_LABEL[status]}
+            {t.status[status]}
           </button>
         );
       })}

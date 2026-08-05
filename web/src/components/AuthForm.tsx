@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useT } from './LocaleProvider';
 
 type Mode = 'login' | 'register';
 
@@ -22,6 +23,7 @@ export default function AuthForm({
 }) {
   // PartyPanel shares links of the form /register?invite=CODE — prefill from
   // it so the recipient never has to retype the code.
+  const t = useT();
   const invitedCode = invite.toUpperCase();
 
   const [pending, setPending] = useState(false);
@@ -43,7 +45,7 @@ export default function AuthForm({
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error ?? 'Something went wrong');
+      setError(data.error ?? t.auth.genericError);
       setPending(false);
       return;
     }
@@ -60,16 +62,16 @@ export default function AuthForm({
     <form onSubmit={onSubmit} className="space-y-5">
       {mode === 'register' && invitedCode && (
         <p className="well-sm px-4 py-3 text-xs text-ink-600">
-          You were invited to a party. Code{' '}
-          <strong className="font-mono font-bold tracking-widest text-brand-800">{invitedCode}</strong> is filled in
-          below — finish signing up and you will land straight in the shared workspace.
+          {t.auth.invitedTo}{' '}
+          <strong className="font-mono font-bold tracking-widest text-brand-700">{invitedCode}</strong>{' '}
+          {t.auth.invitedRest}
         </p>
       )}
 
       {mode === 'register' && (
         <div>
           <label className="label" htmlFor="name">
-            Name
+            {t.auth.name}
           </label>
           <input id="name" name="name" className="input" required minLength={2} autoComplete="name" />
         </div>
@@ -77,14 +79,14 @@ export default function AuthForm({
 
       <div>
         <label className="label" htmlFor="email">
-          Email
+          {t.auth.email}
         </label>
         <input id="email" name="email" type="email" className="input" required autoComplete="email" />
       </div>
 
       <div>
         <label className="label" htmlFor="password">
-          Password
+          {t.auth.password}
         </label>
         <input
           id="password"
@@ -95,13 +97,14 @@ export default function AuthForm({
           minLength={mode === 'register' ? 8 : 1}
           autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
         />
-        {mode === 'register' && <p className="mt-1.5 text-xs text-ink-500">At least 8 characters.</p>}
+        {mode === 'register' && <p className="mt-1.5 text-xs text-ink-500">{t.auth.passwordHint}</p>}
       </div>
 
       {mode === 'register' && (
         <div>
           <label className="label" htmlFor="inviteCode">
-            Invite code <span className="font-normal normal-case tracking-normal text-ink-400">(optional)</span>
+            {t.auth.inviteCode}{' '}
+            <span className="font-normal normal-case tracking-normal text-ink-400">{t.auth.optional}</span>
           </label>
           <input
             id="inviteCode"
@@ -112,34 +115,34 @@ export default function AuthForm({
             defaultValue={invitedCode}
           />
           <p className="mt-1.5 text-xs text-ink-500">
-            Have a partner already searching? Join their party right away.
+            {t.auth.inviteHint}
           </p>
         </div>
       )}
 
       {error && (
-        <p className="well-sm px-4 py-3 text-sm font-medium text-rose-700" role="alert">
+        <p className="well-sm px-4 py-3 text-sm font-medium text-danger" role="alert">
           {error}
         </p>
       )}
 
       <button type="submit" className="btn-primary w-full !py-3" disabled={pending}>
-        {pending ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+        {pending ? t.auth.submitting : mode === 'login' ? t.auth.signIn : t.auth.register}
       </button>
 
       <p className="text-center text-sm text-ink-500">
         {mode === 'login' ? (
           <>
-            No account yet?{' '}
+            {t.auth.noAccount}{' '}
             <Link href={registerHref} className="font-semibold text-brand-700 hover:text-brand-800">
-              Register
+              {t.auth.register}
             </Link>
           </>
         ) : (
           <>
-            Already registered?{' '}
+            {t.auth.haveAccount}{' '}
             <Link href="/login" className="font-semibold text-brand-700 hover:text-brand-800">
-              Sign in
+              {t.auth.signIn}
             </Link>
           </>
         )}

@@ -93,7 +93,7 @@ export default function CommentThread({
           <button type="submit" className="btn-primary" disabled={busy || !body.trim()}>
             {busy ? 'Posting…' : 'Post'}
           </button>
-          {error && <span className="text-sm font-medium text-rose-700">{error}</span>}
+          {error && <span className="text-sm font-medium text-danger">{error}</span>}
         </div>
       </form>
     </div>

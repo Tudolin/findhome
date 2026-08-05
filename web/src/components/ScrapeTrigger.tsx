@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { runScrape } from '@/lib/client';
+import { useT } from './LocaleProvider';
 
 /**
  * "Scrape now" button.
@@ -19,6 +20,7 @@ const POLL_MS = 4000;
 const MAX_POLLS = 150; // ~10 minutes
 
 export default function ScrapeTrigger({ initialRunning = false }: { initialRunning?: boolean }) {
+  const t = useT();
   const router = useRouter();
   const [running, setRunning] = useState(initialRunning);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export default function ScrapeTrigger({ initialRunning = false }: { initialRunni
 
       if (polls.current++ > MAX_POLLS) {
         setRunning(false);
-        setError('Still running after 10 minutes — check `docker compose logs scraper`.');
+        setError(t.scrape.stillRunning);
         return;
       }
 
@@ -55,7 +57,7 @@ export default function ScrapeTrigger({ initialRunning = false }: { initialRunni
       cancelled = true;
       clearInterval(timer);
     };
-  }, [running, router]);
+  }, [running, router, t]);
 
   async function trigger() {
     setError(null);
@@ -78,15 +80,15 @@ export default function ScrapeTrigger({ initialRunning = false }: { initialRunni
         type="button"
         onClick={trigger}
         disabled={running}
-        title="Run every enabled source now, without waiting for the schedule"
+        title={t.scrape.runHint}
         className={clsx(
           'rounded-xl px-3 py-1.5 text-xs font-bold transition-all duration-150 ease-neu',
           running ? 'pressed-on cursor-progress' : 'pressed-off',
         )}
       >
-        {running ? 'Scraping…' : 'Scrape now'}
+        {running ? t.scrape.running : t.scrape.now}
       </button>
-      {running && <span className="text-[11px] text-ink-500">this can take a few minutes</span>}
+      {running && <span className="text-[11px] text-ink-500">{t.scrape.takesAWhile}</span>}
       {error && <span className="chip tint-con !text-[10px]">{error}</span>}
     </div>
   );

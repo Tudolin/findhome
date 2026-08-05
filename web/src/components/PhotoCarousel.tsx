@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
+import ListingImage from './ListingImage';
+import { useT } from './LocaleProvider';
 
 export default function PhotoCarousel({ images, alt }: { images: string[]; alt: string }) {
+  const t = useT();
   const [index, setIndex] = useState(0);
 
   const count = images.length;
@@ -22,7 +25,7 @@ export default function PhotoCarousel({ images, alt }: { images: string[]; alt: 
   if (count === 0) {
     return (
       <div className="flex aspect-[16/10] items-center justify-center rounded-2xl bg-surface text-sm text-ink-400 shadow-neu-inset">
-        No photos available
+        {t.card.noPhoto}
       </div>
     );
   }
@@ -33,8 +36,15 @@ export default function PhotoCarousel({ images, alt }: { images: string[]; alt: 
     <div>
       <div className="card p-3">
         <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-surface-sunken shadow-neu-inset-sm">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={images[index]} alt={`${alt} — photo ${index + 1}`} className="h-full w-full object-cover" />
+          {/* ListingImage, not <img>: the OLX CDN 403s any request that carries
+              our Referer — see the note in ListingImage.tsx. */}
+          <ListingImage
+            src={images[index]}
+            alt={`${alt} — ${index + 1}`}
+            eager
+            fallback={t.card.noPhoto}
+            className="h-full w-full object-cover"
+          />
 
           {count > 1 && (
             <>
@@ -76,8 +86,7 @@ export default function PhotoCarousel({ images, alt }: { images: string[]; alt: 
                 i === index ? 'shadow-neu-inset-sm' : 'shadow-neu-sm hover:opacity-80',
               )}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={src} alt="" loading="lazy" className="h-full w-full rounded-lg object-cover" />
+              <ListingImage src={src} alt="" fallback="" className="h-full w-full rounded-lg object-cover" />
             </button>
           ))}
         </div>

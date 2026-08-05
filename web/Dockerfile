@@ -50,6 +50,9 @@ COPY prisma ./prisma
 COPY --from=deps /app/web/node_modules ./web/node_modules
 COPY web/package.json ./web/package.json
 COPY web/scripts ./web/scripts
+# The seed imports src/lib/locations so it writes the same city/neighborhood
+# slugs the app filters on. Only lib/ is needed — this image never renders.
+COPY web/src/lib ./web/src/lib
 COPY --from=builder /app/web/node_modules/.prisma ./web/node_modules/.prisma
 WORKDIR /app/web
 CMD ["npx", "prisma", "migrate", "deploy", "--schema=../prisma/schema.prisma"]

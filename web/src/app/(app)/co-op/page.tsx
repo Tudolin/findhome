@@ -123,7 +123,7 @@ export default async function CoOpPage() {
 
                 <div className="flex items-center gap-2">
                   {card.partyScore.conflict && (
-                    <span className="chip !text-[10px] text-amber-800 shadow-neu-inset-sm" title="Ratings differ a lot">
+                    <span className="chip !text-[10px] text-warning shadow-neu-inset-sm" title="Ratings differ a lot">
                       needs a talk
                     </span>
                   )}

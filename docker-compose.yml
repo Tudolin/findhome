@@ -82,6 +82,12 @@ services:
       # the private network. The token never leaves the server side.
       SCRAPER_CONTROL_URL: http://scraper:${SCRAPE_CONTROL_PORT:-8080}
       SCRAPE_CONTROL_TOKEN: ${SCRAPE_CONTROL_TOKEN:-}
+      # Read only to tell the user on the Preferences screen whether alerts can
+      # actually be delivered. The scraper is what sends them.
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-}
+      # Absolute base for the calendar-subscription URL. Only needed when a
+      # reverse proxy or tunnel means the request headers are not enough.
+      APP_ORIGIN: ${APP_ORIGIN:-}
     ports:
       - '${BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-3000}:3000'
     depends_on:
@@ -124,6 +130,24 @@ services:
       # Escape hatches for when a portal moves its endpoint (see `make doctor`).
       GRUPOZAP_ENDPOINT: ${GRUPOZAP_ENDPOINT:-}
       QUINTOANDAR_ENDPOINT: ${QUINTOANDAR_ENDPOINT:-}
+      # WhatsApp alerts. The scraper sends them, because it is what discovers a
+      # new listing in the first place.
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-}
+      WHATSAPP_WEBHOOK_URL: ${WHATSAPP_WEBHOOK_URL:-}
+      WHATSAPP_WEBHOOK_TOKEN: ${WHATSAPP_WEBHOOK_TOKEN:-}
+      WHATSAPP_CLOUD_TOKEN: ${WHATSAPP_CLOUD_TOKEN:-}
+      WHATSAPP_CLOUD_PHONE_ID: ${WHATSAPP_CLOUD_PHONE_ID:-}
+      WHATSAPP_TEMPLATE: ${WHATSAPP_TEMPLATE:-}
+      WHATSAPP_TEMPLATE_LANG: ${WHATSAPP_TEMPLATE_LANG:-pt_BR}
+      WHATSAPP_CALLMEBOT_APIKEY: ${WHATSAPP_CALLMEBOT_APIKEY:-}
+      ALERT_MAX_AGE_HOURS: ${ALERT_MAX_AGE_HOURS:-48}
+      # Coordinates for the map, for the portals that publish none. Off by
+      # default because Nominatim is donated infrastructure — see src/geocode.ts.
+      GEOCODE_ENABLED: ${GEOCODE_ENABLED:-false}
+      GEOCODE_ENDPOINT: ${GEOCODE_ENDPOINT:-}
+      GEOCODE_MAX_PER_RUN: ${GEOCODE_MAX_PER_RUN:-25}
+      GEOCODE_DELAY_MS: ${GEOCODE_DELAY_MS:-1100}
+      GEOCODE_CONTACT: ${GEOCODE_CONTACT:-}
     depends_on:
       db:
         condition: service_healthy

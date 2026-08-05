@@ -4,9 +4,13 @@ import CommentThread from '@/components/CommentThread';
 import PhotoCarousel from '@/components/PhotoCarousel';
 import PropertyReview from '@/components/PropertyReview';
 import ScoreBadge from '@/components/ScoreBadge';
+import VisitScheduler from '@/components/VisitScheduler';
+import VisitTime from '@/components/VisitTime';
 import { money, relativeDate, sourceLabel } from '@/lib/format';
+import { getDictionary } from '@/lib/i18n/server';
+import { prisma } from '@/lib/prisma';
 import { getPropertyDetail } from '@/lib/queries';
-import { resolveWorkspace } from '@/lib/workspace';
+import { resolveWorkspace, scopeFilter } from '@/lib/workspace';
 import type { UiInteraction, UiWorkspace } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -23,9 +27,15 @@ export async function generateMetadata({ params }: { params: Params }) {
 
 export default async function PropertyPage({ params }: { params: Params }) {
   const { id } = await params;
-  const ws = await resolveWorkspace();
+  const [ws, t] = await Promise.all([resolveWorkspace(), getDictionary()]);
   const property = await getPropertyDetail(ws, id);
   if (!property) notFound();
+
+  const visits = await prisma.visit.findMany({
+    where: { ...scopeFilter(ws), propertyId: id },
+    orderBy: { scheduledAt: 'asc' },
+    include: { user: { select: { name: true } } },
+  });
 
   const workspace: UiWorkspace = {
     kind: ws.kind,
@@ -109,6 +119,32 @@ export default async function PropertyPage({ params }: { params: Params }) {
               Added {relativeDate(property.createdAt)} · last seen {relativeDate(property.lastSeenAt)} · source id{' '}
               <span className="font-mono">{property.externalId}</span>
             </p>
+          </div>
+
+          <div className="card p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-bold text-ink-800">📅 {t.visits.title}</h2>
+              <Link href="/visits" className="text-xs font-semibold text-brand-700 hover:text-brand-800">
+                {t.visits.subscribe} →
+              </Link>
+            </div>
+
+            {visits.length > 0 && (
+              <ul className="mb-4 space-y-2">
+                {visits.map((visit) => (
+                  <li key={visit.id} className="well-sm flex flex-wrap justify-between gap-2 px-3 py-2 text-xs">
+                    <span className="font-bold text-brand-700">
+                      <VisitTime iso={visit.scheduledAt.toISOString()} /> · {t.visits.minutes(visit.durationMin)}
+                    </span>
+                    {ws.kind === 'PARTY' && (
+                      <span className="text-ink-500">{t.visits.bookedBy(visit.user.name)}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <VisitScheduler propertyId={property.id} />
           </div>
 
           <div className="card p-6">

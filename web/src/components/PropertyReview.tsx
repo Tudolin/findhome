@@ -138,7 +138,7 @@ export default function PropertyReview({
           </p>
         </div>
 
-        {error && <p className="mt-4 text-sm font-medium text-rose-700">{error}</p>}
+        {error && <p className="mt-4 text-sm font-medium text-danger">{error}</p>}
       </div>
 
       {workspace.kind === 'PARTY' && (

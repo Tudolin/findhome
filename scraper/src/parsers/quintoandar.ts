@@ -96,6 +96,10 @@ const FIELDS = [
   'amenities',
   'installations',
   'visitStatus',
+  // Coordinates arrive as `location: { lat, lon }` — note `lon`, not `lng` —
+  // and only if this field is requested. Without them the map has nothing to
+  // plot for what is usually the largest source.
+  'location',
 ];
 
 /** `{ min }` / `{ min, max }`, or an empty object when unconstrained. */
@@ -141,6 +145,24 @@ export function buildBody(target: SearchTarget, page: number, pageSize: number):
       origin: 'HYBRID',
     },
     locationDescriptions: [{ description: slug }],
+  };
+}
+
+/**
+ * Coordinates, verified against the live response.
+ *
+ * They sit at `_source.location.{lat,lon}` — `lon`, not the `lng` most APIs use —
+ * and only appear when `location` is in the requested field list. Reading
+ * `source.lat` / `source.lng`, as an earlier version did, silently produced a
+ * null coordinate for every listing and an empty map.
+ */
+function coordinates(source: Record<string, unknown>): { latitude: number | null; longitude: number | null } {
+  const location = (source.location ?? {}) as Record<string, unknown>;
+  const lat = location.lat ?? source.lat;
+  const lon = location.lon ?? location.lng ?? source.lng;
+  return {
+    latitude: typeof lat === 'number' ? lat : null,
+    longitude: typeof lon === 'number' ? lon : null,
   };
 }
 
@@ -221,8 +243,7 @@ export function mapHit(hit: Hit, ctx: HitContext): RawListing | null {
       typeof source.acceptsPets === 'boolean'
         ? (source.acceptsPets as boolean)
         : detectPetPolicy(`${description} ${amenities.join(' ')}`),
-    latitude: typeof source.lat === 'number' ? source.lat : null,
-    longitude: typeof source.lng === 'number' ? source.lng : null,
+    ...coordinates(source),
     listingType: ctx.listingType,
   };
 }

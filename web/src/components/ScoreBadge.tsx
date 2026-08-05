@@ -11,11 +11,11 @@ import type { PartyScore } from '@/lib/scoring';
 export default function ScoreBadge({ score, compact = false }: { score: PartyScore; compact?: boolean }) {
   const tone =
     score.vetoed || score.score < 30
-      ? 'text-rose-700'
+      ? 'text-danger'
       : score.score >= 70
         ? 'text-brand-800'
         : score.score >= 45
-          ? 'text-amber-800'
+          ? 'text-warning'
           : 'text-ink-600';
 
   const title = [

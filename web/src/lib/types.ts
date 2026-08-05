@@ -8,6 +8,8 @@ export type UiInteraction = {
   user: { id: string; name: string };
   status: InteractionStatus;
   rating: number | null;
+  /** Pinned to the top of this workspace's feed. */
+  pinned: boolean;
   pros: string[];
   cons: string[];
   notes: string | null;

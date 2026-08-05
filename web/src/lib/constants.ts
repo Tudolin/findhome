@@ -25,11 +25,11 @@ export const STATUS_LABEL: Record<InteractionStatus, string> = {
  */
 export const STATUS_STYLE: Record<InteractionStatus, string> = {
   DISCOVERED: 'bg-surface text-ink-600 shadow-neu-inset-sm',
-  INTERESTED: 'bg-surface text-sky-800 shadow-neu-inset-sm',
-  FAVORITE: 'bg-surface text-amber-800 shadow-neu-inset-sm',
-  VISIT_SCHEDULED: 'bg-surface text-violet-800 shadow-neu-inset-sm',
+  INTERESTED: 'bg-surface text-info shadow-neu-inset-sm',
+  FAVORITE: 'bg-surface text-warning shadow-neu-inset-sm',
+  VISIT_SCHEDULED: 'bg-surface text-plan shadow-neu-inset-sm',
   APPLIED: 'bg-surface text-brand-800 shadow-neu-inset-sm',
-  REJECTED: 'bg-surface text-rose-800 shadow-neu-inset-sm',
+  REJECTED: 'bg-surface text-danger shadow-neu-inset-sm',
 };
 
 /** Small colour swatch shown inside a status chip. */

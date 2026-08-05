@@ -169,7 +169,7 @@ export default function PartyPanel({ activeParty }: { activeParty: ActiveParty |
       </div>
 
       {error && (
-        <p className="well-sm px-4 py-3 text-sm font-medium text-rose-700 md:col-span-2" role="alert">
+        <p className="well-sm px-4 py-3 text-sm font-medium text-danger md:col-span-2" role="alert">
           {error}
         </p>
       )}

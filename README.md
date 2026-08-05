@@ -19,14 +19,18 @@ API keys.
 4. [Exposing it on your LAN](#exposing-it-on-your-lan)
 5. [Reverse proxy](#reverse-proxy)
 6. [The scraping engine](#the-scraping-engine)
-7. [Location standardisation](#location-standardisation)
-8. [Database, migrations and seeds](#database-migrations-and-seeds)
-9. [Backup and restore](#backup-and-restore)
-10. [Everyday commands](#everyday-commands)
-11. [Architecture](#architecture)
-12. [Configuration reference](#configuration-reference)
-13. [Troubleshooting](#troubleshooting)
-14. [Security notes](#security-notes)
+7. [Appearance and language](#appearance-and-language)
+8. [Pins and WhatsApp alerts](#pins-and-whatsapp-alerts)
+9. [Map](#map)
+10. [Visits and calendar sync](#visits-and-calendar-sync)
+11. [Location standardisation](#location-standardisation)
+12. [Database, migrations and seeds](#database-migrations-and-seeds)
+13. [Backup and restore](#backup-and-restore)
+14. [Everyday commands](#everyday-commands)
+15. [Architecture](#architecture)
+16. [Configuration reference](#configuration-reference)
+17. [Troubleshooting](#troubleshooting)
+18. [Security notes](#security-notes)
 
 ---
 
@@ -343,6 +347,168 @@ That's your call to make, not the software's.
 
 ---
 
+## Appearance and language
+
+A theme switch (light / dark / follow the system) and a language switch
+(Português / English) sit together in the top bar. Both are per-device cookies,
+not account settings — a phone read in a dark room and a laptop in daylight want
+different answers, and a shared party account may be read in two languages.
+
+Neither adds a dependency. The theme is CSS custom properties: `tailwind.config.ts`
+resolves every colour and every neumorphic shadow through `var(--…)`, and the two
+palettes live in `globals.css` under `:root` and `:root[data-theme='dark']`. That
+indirection is what makes dark mode possible at all here — this style's depth
+comes from a pair of shadow tones that must flip with the background, and a
+Tailwind `dark:` variant cannot restyle a shadow baked into a utility class. A
+small blocking script in `<head>` applies the theme before first paint, so there
+is no white flash on a dark-mode load.
+
+Translation is a typed dictionary in `web/src/lib/i18n/`. `en.ts` defines the
+shape and `pt.ts` is checked against it, so a missing key is a build error rather
+than a blank label. Server components call `getDictionary()`; client components
+read the same dictionary from `LocaleProvider`.
+
+The dark palette is not a filter over the light one. Neumorphism needs a mid-tone
+surface with room for a highlight above and a shadow below, so the dark surface
+sits at `#252b22` rather than near-black, and the `ink` scale is inverted so
+`text-ink-800` stays "body text" in both skins. Status colours go through
+`--c-danger` / `--c-warning` / `--c-info` / `--c-plan` because Tailwind's fixed
+steps cannot serve both: `rose-700` is right on cream and invisible on charcoal.
+
+---
+
+## Pins and WhatsApp alerts
+
+**Pins** put a listing at the top of the feed. A pin is scoped like every other
+interaction: made in Solo Mode it is yours alone, made inside a party it is
+visible to the party *as yours* — each member owns their own row, so the card can
+say "pinned by Sam" rather than flattening it into an anonymous flag. Pinned
+listings sort first under every sort order, and `📌 Pinned only` in the toolbar
+narrows to just them.
+
+**Alerts** send a WhatsApp message when a new listing matches a saved search.
+Enabled per workspace on the Preferences screen (switch, number, and a cap on how
+many listings one message may carry); the provider is server-wide config:
+
+```bash
+WHATSAPP_PROVIDER=webhook   # your own gateway: Evolution API, Z-API, n8n, …
+WHATSAPP_PROVIDER=cloud     # Meta's official WhatsApp Cloud API
+WHATSAPP_PROVIDER=callmebot # personal-use bridge, easiest to get working
+```
+
+Three properties it is built around:
+
+- **Never twice.** `alert_deliveries` holds one row per (workspace, listing), and
+  the candidate query is "matches AND has no row here" — duplicates are
+  impossible by construction rather than by remembering a timestamp.
+- **Never a flood.** The first check after enabling marks everything currently
+  matching as already seen, so switching alerts on does not narrate the back
+  catalogue. After that, only listings first seen within `ALERT_MAX_AGE_HOURS`
+  qualify, and `alertMaxPerRun` caps one message.
+- **Never fatal.** A dead channel logs a warning and writes no rows, so the
+  listings are retried next run and the scrape still succeeds.
+
+> ⚠️ Delivery itself is the one thing in this project that was **not** verified
+> end to end — that needs your gateway credentials. The message composition,
+> matching, de-duplication and first-run baseline were tested; whether your
+> provider accepts the payload is the part to check first. Watch
+> `docker compose logs scraper | grep whatsapp`.
+>
+> A note specific to `cloud`: outside a 24-hour window opened by *you* messaging
+> the business number, Meta only delivers pre-approved **template** messages.
+> Set `WHATSAPP_TEMPLATE` to a template with a single `{{1}}` body parameter, or
+> sends will return 200 and quietly go nowhere.
+
+---
+
+## Map
+
+`/map` plots every listing that has coordinates on an OpenStreetMap, drawn with
+Leaflet. Markers are **price labels**, not teardrops — comparing what costs what,
+where, is the only reason to look at a map of listings. Pinned listings are
+highlighted, and clicking one opens the listing.
+
+Two decisions worth knowing about:
+
+**Leaflet is loaded from a CDN, not bundled.** The map's tiles come from
+`tile.openstreetmap.org` at view time, so this feature already cannot work
+offline; fetching Leaflet the same way therefore adds no new failure mode, keeps
+the image smaller, and means users who never open the map never download it. To
+run fully self-hosted, drop `leaflet.js`/`leaflet.css` into `web/public/` and
+point `LEAFLET_JS`/`LEAFLET_CSS` in `PropertyMap.tsx` at them.
+
+**Not every listing has coordinates.** QuintoAndar and Chaves na Mão publish
+lat/lon; OLX and ImovelWeb do not. The page says how many are missing rather than
+quietly showing a partial map. To fill the gap, turn on geocoding:
+
+```bash
+GEOCODE_ENABLED=true
+GEOCODE_CONTACT=you@example.com    # required by Nominatim's usage policy
+GEOCODE_MAX_PER_RUN=25
+```
+
+It is off by default deliberately. Nominatim is donated OpenStreetMap
+infrastructure whose policy allows one request per second, requires a contact
+address, and forbids bulk geocoding — so this resolves a handful per run and works
+through the backlog over days. A transient failure (403, rate limit, timeout)
+leaves the listing untried so it is retried later; only a genuine "address not
+found" is recorded as final. Point `GEOCODE_ENDPOINT` at your own Nominatim
+container to lift all of it.
+
+> Note: Nominatim refuses most datacenter IP ranges. If `make doctor`-style
+> geocoding logs show `HTTP 403`, that is why — a home connection normally works.
+
+---
+
+## Visits and calendar sync
+
+`/visits` is the viewing agenda. Bookings are scoped like everything else: made in
+Solo Mode they are yours, made inside a party the whole party sees them, because
+one person books the trip and both need it in their calendar. Booking a viewing
+also nudges the listing's status to *Visit scheduled* — but only forwards, so a
+listing you already applied for is not walked backwards.
+
+A visit is deliberately **not** just the `VISIT_SCHEDULED` status. That status
+answers "how far did this listing get"; a visit answers "when, for how long, and
+what did we agree to ask". One flat can be visited twice, and it keeps its status
+after the visit is over.
+
+### Getting it into Apple / Google Calendar
+
+Three ways out, no OAuth:
+
+| | What it does |
+|---|---|
+| **Subscribe** | A URL your calendar app polls. New bookings appear on their own. |
+| **Add to Google Calendar** | One-click link for a single viewing. |
+| **Download .ics** | A file for one viewing — opens in any calendar app. |
+
+The subscription is the one that matters for a shared search: your partner books
+a viewing in the app and it lands on your phone without anyone exporting
+anything. Paste the URL into Apple Calendar (*File → New Calendar Subscription*)
+or Google Calendar (*Other calendars → From URL*); the `webcal://` button does it
+in one click on desktop.
+
+Per-vendor OAuth was considered and rejected: two provider integrations, two
+consent screens and two sets of refresh tokens to maintain, to arrive at the same
+place iCalendar already reaches — and Apple has no such API at all.
+
+> ⚠️ **The subscription URL is a bearer token.** Apple and Google fetch it from
+> their own servers with no cookies, so the secret has to be in the URL. Anyone
+> holding the link can read your viewing schedule — dates, addresses, notes —
+> until you rotate it. It grants nothing else: no session, no writes, no listings.
+> *Generate a new link* on the agenda screen invalidates it and every existing
+> subscription.
+>
+> Behind a reverse proxy, set `APP_ORIGIN` so the generated URL uses your public
+> hostname instead of the container's.
+
+The feed is a person, not a workspace: it returns the union of your solo agenda
+and every party you belong to, because nobody wants to subscribe to one calendar
+per party and merge them by hand.
+
+---
+
 ## Location standardisation
 
 Cities, states and neighborhoods arrive spelled every possible way — the user
@@ -646,6 +812,13 @@ Everything is set in `.env`. Full annotated list in
 | `SCRAPE_CONTROL_ENABLED` | `true` | `false` disables "Scrape now" and `make scrape-now` |
 | `GRUPOZAP_ENDPOINT` | *(built-in)* | Override when `make doctor` says the path moved |
 | `QUINTOANDAR_ENDPOINT` | *(built-in)* | Same |
+| `WHATSAPP_PROVIDER` | *(empty)* | `webhook` / `cloud` / `callmebot`. Empty disables alerts |
+| `ALERT_MAX_AGE_HOURS` | `48` | Older listings are marked seen rather than announced |
+| `GEOCODE_ENABLED` | `false` | Resolve missing coordinates for the map |
+| `GEOCODE_CONTACT` | *(empty)* | Email in the User-Agent. Required by Nominatim's policy |
+| `GEOCODE_MAX_PER_RUN` | `25` | Keeps within the 1 req/s policy over time |
+| `GEOCODE_ENDPOINT` | *(Nominatim)* | Point at your own instance to lift the limits |
+| `APP_ORIGIN` | *(from request)* | Public base URL, for calendar-feed links behind a proxy |
 | `DB_/WEB_/SCRAPER_MEMORY_LIMIT` | `512M`/`512M`/`1G` | Per-container caps |
 | `SCRAPER_SHM_SIZE` | `512mb` | Chromium crashes on Docker's default 64MB |
 

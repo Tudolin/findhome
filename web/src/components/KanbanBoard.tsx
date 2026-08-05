@@ -5,10 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import type { InteractionStatus } from '@prisma/client';
-import { BOARD_COLUMNS, STATUS_DOT, STATUS_LABEL } from '@/lib/constants';
+import { BOARD_COLUMNS, STATUS_DOT } from '@/lib/constants';
 import { updateInteraction } from '@/lib/client';
 import { money } from '@/lib/format';
 import type { UiProperty, UiWorkspace } from '@/lib/types';
+import { useT } from './LocaleProvider';
 import ScoreBadge from './ScoreBadge';
 import StarRating from './StarRating';
 
@@ -18,6 +19,7 @@ import StarRating from './StarRating';
  * current user's own interaction row.
  */
 export default function KanbanBoard({ cards, workspace }: { cards: UiProperty[]; workspace: UiWorkspace }) {
+  const t = useT();
   const router = useRouter();
   const [dragging, setDragging] = useState<string | null>(null);
   const [hover, setHover] = useState<InteractionStatus | null>(null);
@@ -38,7 +40,7 @@ export default function KanbanBoard({ cards, workspace }: { cards: UiProperty[];
 
   return (
     <>
-      {error && <p className="well-sm mb-4 px-4 py-3 text-sm font-medium text-rose-700">{error}</p>}
+      {error && <p className="well-sm mb-4 px-4 py-3 text-sm font-medium text-danger">{error}</p>}
 
       <div className="scrollbar-thin -mx-4 flex gap-4 overflow-x-auto px-4 pb-4">
         {BOARD_COLUMNS.map((status) => {
@@ -67,7 +69,7 @@ export default function KanbanBoard({ cards, workspace }: { cards: UiProperty[];
               <header className="mb-3 flex items-center justify-between px-1">
                 <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-ink-600">
                   <span className={clsx('h-2 w-2 rounded-full', STATUS_DOT[status])} />
-                  {STATUS_LABEL[status]}
+                  {t.status[status]}
                 </span>
                 <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-surface px-2 text-[11px] font-bold text-ink-600 shadow-neu-sm">
                   {column.length}

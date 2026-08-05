@@ -63,11 +63,17 @@ model User {
   name         String
   createdAt    DateTime @default(now()) @map("created_at")
 
+  /// Bearer token in the calendar-feed URL handed to Apple/Google Calendar.
+  /// Those clients cannot present a session cookie, so the secret has to live in
+  /// the URL; it is generated on first use and can be rotated from the app.
+  calendarToken String? @unique @map("calendar_token")
+
   createdParties    Party[]               @relation("PartyCreator")
   memberships       PartyMember[]
   preferenceProfile PreferenceProfile?    @relation("SoloPreferences")
   interactions      PropertyInteraction[]
   comments          PropertyComment[]
+  visits            Visit[]
 
   @@map("users")
 }
@@ -84,6 +90,7 @@ model Party {
   preferenceProfile PreferenceProfile?    @relation("PartyPreferences")
   interactions      PropertyInteraction[]
   comments          PropertyComment[]
+  visits            Visit[]
 
   @@index([createdByUserId])
   @@map("parties")
@@ -147,6 +154,16 @@ model PreferenceProfile {
   petFriendly Boolean  @default(false) @map("pet_friendly")
   amenities   String[] @default([])
 
+  // --- WhatsApp alerts ------------------------------------------------------
+  // Opt-in per workspace: a party alerts one shared number, a solo profile the
+  // owner's. The provider and its credentials are server-wide env config — only
+  // the destination and the on/off switch belong to the user.
+  alertsEnabled  Boolean @default(false) @map("alerts_enabled")
+  /// E.164 without the +, e.g. 5541999998888. Null disables alerts regardless.
+  alertWhatsapp  String? @map("alert_whatsapp") @db.VarChar(20)
+  /// Never send more than this many listings in one message; the rest wait.
+  alertMaxPerRun Int     @default(5) @map("alert_max_per_run")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -196,6 +213,9 @@ model Property {
 
   latitude  Float?
   longitude Float?
+  /// When the geocoder last tried this address, whether or not it succeeded.
+  /// Set even on a miss, so an unresolvable address is not retried forever.
+  geocodedAt DateTime? @map("geocoded_at")
 
   listingType ListingType @default(RENT) @map("listing_type")
   active      Boolean     @default(true)
@@ -205,6 +225,8 @@ model Property {
 
   interactions PropertyInteraction[]
   comments     PropertyComment[]
+  alerts       AlertDelivery[]
+  visits       Visit[]
 
   // De-duplication key for the scraping engine.
   @@unique([source, externalId])
@@ -229,6 +251,11 @@ model PropertyInteraction {
   status InteractionStatus @default(DISCOVERED)
   rating Int? // 1-5 stars
 
+  /// Pinned to the top of the feed. Scoped like everything else on this row, so
+  /// a pin made in Solo Mode is yours alone and one made inside a party is
+  /// visible to the party as yours.
+  pinned Boolean @default(false)
+
   pros  String[] @default([])
   cons  String[] @default([])
   notes String?
@@ -242,8 +269,45 @@ model PropertyInteraction {
 
   @@unique([propertyId, userId, scopeKey])
   @@index([scopeKey, status])
+  @@index([scopeKey, pinned])
   @@index([partyId])
   @@map("property_interactions")
+}
+
+/**
+ * A scheduled viewing.
+ *
+ * Scoped like an interaction: booked in Solo Mode it is yours, booked inside a
+ * party the whole party sees it — house-hunting as a couple means one person
+ * books and both need it in their calendar.
+ *
+ * Deliberately NOT modelled as an InteractionStatus. VISIT_SCHEDULED answers
+ * "how far did this listing get"; a Visit answers "when, for how long, and what
+ * did we agree to ask". Those are different lifetimes: a listing keeps its status
+ * after the visit happened, and one flat can be visited twice.
+ */
+model Visit {
+  id         String  @id @default(cuid())
+  propertyId String  @map("property_id")
+  userId     String  @map("user_id")
+  partyId    String? @map("party_id")
+  scopeKey   String  @map("scope_key")
+
+  /// Always stored in UTC; rendered in the browser's zone.
+  scheduledAt DateTime @map("scheduled_at")
+  durationMin Int      @default(30) @map("duration_min")
+  notes       String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  party    Party?   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@index([scopeKey, scheduledAt])
+  @@index([propertyId])
+  @@map("visits")
 }
 
 // Discussion thread under a property, scoped to a workspace.
@@ -268,6 +332,33 @@ model PropertyComment {
 // ---------------------------------------------------------------------------
 // Scraper observability
 // ---------------------------------------------------------------------------
+
+/**
+ * One row per (workspace, property) that has been announced over WhatsApp.
+ *
+ * This table is the only thing standing between the feature and a message
+ * storm: the scraper decides what to alert by asking "which matching listings
+ * have no row here yet", so a listing can never be announced twice, and a
+ * failed send simply leaves no row and is retried next run.
+ *
+ * `scopeKey` is "solo:<userId>" or the party id — the same scoping vocabulary as
+ * PropertyInteraction, except Solo Mode needs the user id in the key here
+ * because there is no user column to disambiguate on.
+ */
+model AlertDelivery {
+  id         String   @id @default(cuid())
+  scopeKey   String   @map("scope_key")
+  propertyId String   @map("property_id")
+  sentAt     DateTime @default(now()) @map("sent_at")
+  /// Which provider carried it, for debugging a silent channel.
+  channel    String   @db.VarChar(30)
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([scopeKey, propertyId])
+  @@index([sentAt])
+  @@map("alert_deliveries")
+}
 
 model ScrapeRun {
   id         String         @id @default(cuid())

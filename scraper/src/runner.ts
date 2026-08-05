@@ -5,6 +5,8 @@ import { prisma } from './db.js';
 import { logger } from './logger.js';
 import { getParser, mayNeedBrowser } from './parsers/index.js';
 import { deactivateStale, persistListings } from './persist.js';
+import { geocodePending } from './geocode.js';
+import { runAlerts } from './notify/alerts.js';
 import { buildSearchTargets, describeTarget } from './targets.js';
 import type { Transport } from './http.js';
 import type { ScrapeContext } from './types.js';
@@ -156,6 +158,13 @@ export async function runScrape(sources: PropertySource[] = config.sources): Pro
     await browsers.close();
     running = false;
   }
+
+  // Coordinates before alerts, both after the catalogue is written. Neither is
+  // ever allowed to fail the run: a rate-limited geocoder or a dead WhatsApp
+  // channel is not a failed scrape.
+  await geocodePending().catch((err) => log.error('geocoding failed', err));
+  // Alerts last, so they only ever describe listings already readable in the app.
+  await runAlerts().catch((err) => log.error('alert dispatch failed', err));
 
   const finishedAt = new Date();
   const summary: RunSummary = {

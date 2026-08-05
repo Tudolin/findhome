@@ -4,6 +4,9 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import clsx from 'clsx';
+import type { Theme } from '@/lib/theme';
+import AppearanceMenu from './AppearanceMenu';
+import { useT } from './LocaleProvider';
 
 export type WorkspaceOption = {
   id: string;
@@ -13,25 +16,30 @@ export type WorkspaceOption = {
   inviteCode: string | null;
 };
 
-const NAV = [
-  { href: '/dashboard', label: 'Discovery' },
-  { href: '/co-op', label: 'Co-Op Hub' },
-  { href: '/preferences', label: 'Preferences' },
-];
-
 export default function TopBar({
   user,
   workspaces,
   activeId,
+  theme,
 }: {
   user: { name: string; email: string };
   workspaces: WorkspaceOption[];
   activeId: string;
+  theme: Theme;
 }) {
+  const t = useT();
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  const nav = [
+    { href: '/dashboard', label: t.nav.discovery },
+    { href: '/map', label: t.nav.map },
+    { href: '/visits', label: t.nav.visits },
+    { href: '/co-op', label: t.nav.coop },
+    { href: '/preferences', label: t.nav.preferences },
+  ];
 
   const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
 
@@ -76,7 +84,7 @@ export default function TopBar({
                 active?.kind === 'PARTY' ? 'bg-brand-500' : 'bg-ink-400',
               )}
             />
-            <span className="truncate">{active?.name ?? 'Personal Search'}</span>
+            <span className="truncate">{active?.name ?? t.nav.personalSearch}</span>
             <span className="text-ink-400">▾</span>
           </button>
 
@@ -84,7 +92,9 @@ export default function TopBar({
             <>
               <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
               <div className="absolute left-0 z-20 mt-2 w-72 overflow-hidden rounded-2xl bg-surface p-2 shadow-neu-lg">
-                <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-ink-500">Workspaces</p>
+                <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-ink-500">
+                  {t.nav.workspaces}
+                </p>
                 <div className="space-y-1.5">
                   {workspaces.map((w) => (
                     <button
@@ -94,14 +104,14 @@ export default function TopBar({
                       className={clsx(
                         'flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-all duration-150',
                         w.id === activeId
-                          ? 'bg-surface text-brand-800 shadow-neu-inset-sm'
+                          ? 'bg-surface text-brand-700 shadow-neu-inset-sm'
                           : 'bg-surface text-ink-700 shadow-neu-sm hover:text-ink-900',
                       )}
                     >
                       <span className="min-w-0">
                         <span className="block truncate font-semibold">{w.name}</span>
                         <span className="block text-xs font-normal text-ink-500">
-                          {w.kind === 'SOLO' ? 'Solo mode' : `Party · ${w.memberCount} members`}
+                          {w.kind === 'SOLO' ? t.nav.soloMode : t.nav.party(w.memberCount)}
                         </span>
                       </span>
                       {w.id === activeId && <span className="text-brand-600">✓</span>}
@@ -113,7 +123,7 @@ export default function TopBar({
                   onClick={() => setOpen(false)}
                   className="mt-2 block rounded-xl px-3 py-2.5 text-sm font-semibold text-brand-700 shadow-neu-sm hover:text-brand-800"
                 >
-                  + Create or join a party
+                  {t.nav.createOrJoin}
                 </Link>
               </div>
             </>
@@ -121,14 +131,14 @@ export default function TopBar({
         </div>
 
         <nav className="ml-2 hidden items-center gap-2 md:flex">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={clsx(
                 'rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-150 ease-neu',
                 pathname.startsWith(item.href)
-                  ? 'bg-surface text-brand-800 shadow-neu-inset-sm'
+                  ? 'bg-surface text-brand-700 shadow-neu-inset-sm'
                   : 'bg-surface text-ink-600 shadow-neu-sm hover:text-ink-900',
               )}
             >
@@ -137,23 +147,26 @@ export default function TopBar({
           ))}
         </nav>
 
-        <div className="ml-auto flex shrink-0 items-center gap-3">
-          <span className="hidden text-sm font-medium text-ink-600 sm:inline">{user.name}</span>
+        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+          <span className="hidden text-sm font-medium text-ink-600 lg:inline">{user.name}</span>
+          <AppearanceMenu theme={theme} />
           <button type="button" onClick={signOut} className="btn-ghost !py-2 whitespace-nowrap">
-            Sign out
+            {t.nav.signOut}
           </button>
         </div>
       </div>
 
-      <nav className="flex gap-2 px-4 pb-3 md:hidden">
-        {NAV.map((item) => (
+      {/* Five destinations do not fit a phone row at full width, so the mobile
+          bar scrolls rather than squeezing labels into two characters. */}
+      <nav className="scrollbar-thin flex gap-2 overflow-x-auto px-4 pb-3 md:hidden">
+        {nav.map((item) => (
           <Link
             key={item.href}
             href={item.href}
             className={clsx(
-              'flex-1 rounded-xl px-2 py-2 text-center text-xs font-semibold transition-all',
+              'shrink-0 rounded-xl px-3 py-2 text-center text-xs font-semibold transition-all',
               pathname.startsWith(item.href)
-                ? 'bg-surface text-brand-800 shadow-neu-inset-sm'
+                ? 'bg-surface text-brand-700 shadow-neu-inset-sm'
                 : 'bg-surface text-ink-600 shadow-neu-sm',
             )}
           >

@@ -2,6 +2,128 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+   Palettes.
+
+   Both skins are defined here and selected by `data-theme` on <html> (set before
+   first paint by ThemeScript, so there is no flash of the wrong theme).
+
+   Colours are space-separated RGB channels so Tailwind's opacity modifiers
+   (`bg-surface/95`) keep working — see tailwind.config.ts.
+
+   The dark skin is not a filter over the light one. Neumorphism needs a mid-tone
+   surface with room for a lighter highlight above it and a darker shadow below;
+   a near-black background leaves nowhere for the highlight to go and the depth
+   collapses. So the dark surface sits at ~#252b22 rather than #000, and the ink
+   scale is inverted (ink-800, used for body text, becomes light).
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  --c-surface: 238 243 232; /* #eef3e8 */
+  --c-surface-raised: 243 247 238;
+  --c-surface-sunken: 230 237 224;
+  --c-surface-white: 255 255 255;
+
+  --c-ink-50: 247 250 244;
+  --c-ink-100: 238 243 232;
+  --c-ink-200: 224 232 216;
+  --c-ink-300: 199 211 188;
+  --c-ink-400: 156 175 144;
+  --c-ink-500: 120 139 109;
+  --c-ink-600: 93 110 84;
+  --c-ink-700: 73 87 66;
+  --c-ink-800: 55 66 50;
+  --c-ink-900: 40 48 37;
+  --c-ink-950: 23 29 21;
+
+  --c-brand-50: 243 249 236;
+  --c-brand-100: 229 242 215;
+  --c-brand-200: 205 230 179;
+  --c-brand-300: 174 212 133;
+  --c-brand-400: 147 197 114;
+  --c-brand-500: 124 180 92;
+  --c-brand-600: 97 153 70;
+  --c-brand-700: 75 120 56;
+  --c-brand-800: 61 95 48;
+  --c-brand-900: 51 78 42;
+  --c-brand-950: 25 43 20;
+
+  /* The two tones every neu shadow is built from. */
+  --neu-light: #ffffff;
+  --neu-dark: #c7d3bc;
+  --neu-dark-soft: #d3ddc9;
+
+  --neu-brand-light: #a9dd8c;
+  --neu-brand-dark: #8aa878;
+  --neu-brand-inset-light: #8ed46a;
+  --neu-brand-inset-dark: #567f3d;
+
+  /* Semantic colours. Tailwind's fixed rose/amber/sky/violet steps cannot work
+     in both skins — rose-700 is unreadable on a dark surface and rose-400 is
+     unreadable on a light one — so status text uses these instead. */
+  --c-danger: 190 18 60; /* rose-700 */
+  --c-warning: 180 83 9; /* amber-700 */
+  --c-info: 7 89 133; /* sky-800 */
+  --c-plan: 109 40 217; /* violet-700 */
+
+  /* CSS cannot interpolate var() inside url(), so the whole data URI is swapped
+     per skin rather than just its fill colour. */
+  --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23788b6d'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5z'/%3E%3C/svg%3E");
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --c-surface: 37 43 34; /* #252b22 — mid-dark, so highlights still have room */
+  --c-surface-raised: 44 51 40;
+  --c-surface-sunken: 31 36 28;
+  --c-surface-white: 17 21 15;
+
+  /* Inverted: ink-800 is body text in both skins, so it must be light here. */
+  --c-ink-50: 23 29 21;
+  --c-ink-100: 31 36 28;
+  --c-ink-200: 46 54 42;
+  --c-ink-300: 71 82 65;
+  --c-ink-400: 122 138 112;
+  --c-ink-500: 154 170 143;
+  --c-ink-600: 181 196 170;
+  --c-ink-700: 205 217 195;
+  --c-ink-800: 224 233 216;
+  --c-ink-900: 240 245 236;
+  --c-ink-950: 250 252 248;
+
+  /* Lifted: the mid steps must stay legible against a dark surface. */
+  --c-brand-50: 27 40 20;
+  --c-brand-100: 36 54 27;
+  --c-brand-200: 55 82 42;
+  --c-brand-300: 106 158 78;
+  --c-brand-400: 147 197 114;
+  --c-brand-500: 163 209 132;
+  --c-brand-600: 181 220 152;
+  --c-brand-700: 198 229 174;
+  --c-brand-800: 214 238 195;
+  --c-brand-900: 229 244 215;
+  --c-brand-950: 240 250 232;
+
+  /* Highlight above, shadow below — the same light source, both tones darker. */
+  --neu-light: #303829;
+  --neu-dark: #171b13;
+  --neu-dark-soft: #1c2118;
+
+  --neu-brand-light: #5f8a48;
+  --neu-brand-dark: #24301b;
+  --neu-brand-inset-light: #6f9c55;
+  --neu-brand-inset-dark: #1e2817;
+
+  --c-danger: 251 113 133; /* rose-400 */
+  --c-warning: 251 191 36; /* amber-400 */
+  --c-info: 125 211 252; /* sky-300 */
+  --c-plan: 196 181 253; /* violet-300 */
+
+  --select-arrow: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%239aaa8f'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5z'/%3E%3C/svg%3E");
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -12,7 +134,7 @@
     @apply bg-surface text-ink-800 antialiased;
   }
   ::selection {
-    @apply bg-brand-200 text-brand-900;
+    @apply bg-brand-300 text-brand-950;
   }
   :focus-visible {
     @apply outline-none ring-2 ring-brand-400 ring-offset-2 ring-offset-surface;
@@ -49,7 +171,7 @@
     @apply btn bg-surface text-ink-700 shadow-neu-sm hover:text-ink-900 active:shadow-neu-inset-sm;
   }
   .btn-danger {
-    @apply btn bg-surface text-rose-700 shadow-neu-sm hover:text-rose-800 active:shadow-neu-inset-sm;
+    @apply btn bg-surface text-danger shadow-neu-sm hover:opacity-80 active:shadow-neu-inset-sm;
   }
 
   /* ---- form controls -------------------------------------------------- */
@@ -62,7 +184,7 @@
   }
   select.input {
     @apply cursor-pointer appearance-none bg-no-repeat pr-9;
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23788b6d'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5z'/%3E%3C/svg%3E");
+    background-image: var(--select-arrow);
     background-position: right 0.75rem center;
     background-size: 1rem;
   }
@@ -86,10 +208,10 @@
   /* The ring is deliberate: an inset shadow alone is a weak "selected" signal
      at chip size, and low-contrast state is neumorphism's known failure mode. */
   .tag-toggle-on {
-    @apply bg-surface text-brand-800 shadow-neu-inset-sm ring-1 ring-brand-300;
+    @apply bg-surface text-brand-700 shadow-neu-inset-sm ring-1 ring-brand-400;
   }
   .pressed-on {
-    @apply bg-surface text-brand-800 shadow-neu-inset-sm ring-1 ring-brand-300;
+    @apply bg-surface text-brand-700 shadow-neu-inset-sm ring-1 ring-brand-400;
   }
   .pressed-off {
     @apply bg-surface text-ink-600 shadow-neu-sm hover:text-ink-900;
@@ -100,31 +222,39 @@
   /* Semantic tints. Kept as pressed wells so coloured state never breaks the
      single-surface rule; the colour lives in the text, not a filled block. */
   .tint-pro {
-    @apply bg-surface text-brand-800 shadow-neu-inset-sm;
+    @apply bg-surface text-brand-700 shadow-neu-inset-sm;
   }
   .tint-con {
-    @apply bg-surface text-rose-700 shadow-neu-inset-sm;
+    @apply bg-surface text-danger shadow-neu-inset-sm;
   }
 }
 
 /* Range sliders: recessed track, extruded thumb. */
 input[type='range'] {
   @apply h-3 w-full cursor-pointer appearance-none rounded-full bg-surface;
-  box-shadow: inset 2px 2px 5px #c7d3bc, inset -2px -2px 5px #ffffff;
+  box-shadow:
+    inset 2px 2px 5px var(--neu-dark),
+    inset -2px -2px 5px var(--neu-light);
 }
 input[type='range']::-webkit-slider-thumb {
   @apply h-5 w-5 appearance-none rounded-full bg-brand-400;
-  box-shadow: 2px 2px 5px #a9b89e, -2px -2px 5px #ffffff;
+  box-shadow:
+    2px 2px 5px var(--neu-dark),
+    -2px -2px 5px var(--neu-light);
 }
 input[type='range']::-moz-range-thumb {
   @apply h-5 w-5 rounded-full border-0 bg-brand-400;
-  box-shadow: 2px 2px 5px #a9b89e, -2px -2px 5px #ffffff;
+  box-shadow:
+    2px 2px 5px var(--neu-dark),
+    -2px -2px 5px var(--neu-light);
 }
 
 /* Checkboxes: same recessed-to-pressed language as the toggles. */
 input[type='checkbox'] {
   @apply h-5 w-5 cursor-pointer appearance-none rounded-md bg-surface transition-all duration-150;
-  box-shadow: inset 2px 2px 4px #c7d3bc, inset -2px -2px 4px #ffffff;
+  box-shadow:
+    inset 2px 2px 4px var(--neu-dark),
+    inset -2px -2px 4px var(--neu-light);
 }
 input[type='checkbox']:checked {
   @apply bg-brand-400;
@@ -132,7 +262,9 @@ input[type='checkbox']:checked {
   background-size: 1rem;
   background-position: center;
   background-repeat: no-repeat;
-  box-shadow: 2px 2px 4px #a9b89e, -2px -2px 4px #ffffff;
+  box-shadow:
+    2px 2px 4px var(--neu-dark),
+    -2px -2px 4px var(--neu-light);
 }
 
 .scrollbar-thin::-webkit-scrollbar {
@@ -148,10 +280,69 @@ input[type='checkbox']:checked {
 
 /* Skeletons for the loading.tsx routes. */
 @keyframes neu-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 .skeleton {
   @apply rounded-xl bg-surface shadow-neu-inset-sm;
   animation: neu-pulse 1.6s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Map pins (PropertyMap).
+
+   Leaflet builds its markers as raw HTML strings outside React, so these cannot
+   be Tailwind classes on a JSX element — they are plain CSS reaching for the
+   same theme variables, which is also what keeps the pins correct in dark mode.
+
+   A price label rather than a teardrop: comparing what costs what, where, is the
+   entire reason to look at a map of listings.
+   --------------------------------------------------------------------------- */
+.fh-pin {
+  display: inline-block;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  border-radius: 9999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-ink-800));
+  box-shadow:
+    2px 2px 5px var(--neu-dark),
+    -2px -2px 5px var(--neu-light);
+}
+.fh-pin-on {
+  background: rgb(var(--c-brand-400));
+  color: rgb(var(--c-brand-950));
+}
+/* Leaflet's own chrome sits on a white card by default. */
+.leaflet-container {
+  background: rgb(var(--c-surface-sunken));
+  font: inherit;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-ink-800));
+  box-shadow:
+    3px 3px 7px var(--neu-dark-soft),
+    -3px -3px 7px var(--neu-light);
+}
+.leaflet-popup-content a {
+  font-weight: 700;
+  color: rgb(var(--c-brand-700));
+}
+.leaflet-bar a,
+.leaflet-control-attribution {
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-ink-700));
+}
+.leaflet-bar a {
+  border-color: rgb(var(--c-ink-300));
 }

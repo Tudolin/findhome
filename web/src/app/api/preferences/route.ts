@@ -21,7 +21,18 @@ const schema = z.object({
   minSqm: z.number().int().min(0).max(2000).default(0),
   petFriendly: z.boolean().default(false),
   amenities: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  // --- WhatsApp alerts ------------------------------------------------------
+  alertsEnabled: z.boolean().default(false),
+  /** Any punctuation is accepted here and stripped below. */
+  alertWhatsapp: z.string().trim().max(30).nullish(),
+  alertMaxPerRun: z.number().int().min(1).max(20).default(5),
 });
+
+/** Digits only — what every WhatsApp provider expects. Returns null if unusable. */
+function normalizePhone(value: string | null | undefined): string | null {
+  const digits = (value ?? '').replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15 ? digits : null;
+}
 
 /** Preferences for the ACTIVE workspace (personal profile or shared party profile). */
 export const GET = handler(async (req: Request) => {
@@ -58,6 +69,13 @@ export const PUT = handler(async (req: Request) => {
   // Folds "Vila Mariana" / "vila mariana" / "VILA MARIANA" into one entry.
   const neighborhoods = dedupeBySlug(input.neighborhoods);
 
+  // A half-typed number would mean alerts that silently go nowhere, so an
+  // unusable one turns the feature off rather than being stored as-is.
+  const alertWhatsapp = normalizePhone(input.alertWhatsapp);
+  if (input.alertsEnabled && input.alertWhatsapp && !alertWhatsapp) {
+    throw badRequest('The WhatsApp number needs a country code and area code, e.g. 5541999998888');
+  }
+
   const data = {
     ...input,
     city,
@@ -65,6 +83,8 @@ export const PUT = handler(async (req: Request) => {
     state,
     neighborhoods,
     neighborhoodSlugs: neighborhoods.map(locationSlug),
+    alertWhatsapp,
+    alertsEnabled: input.alertsEnabled && alertWhatsapp !== null,
   };
 
   const owner = ws.kind === 'SOLO' ? { userId: ws.userId } : { partyId: ws.partyId! };

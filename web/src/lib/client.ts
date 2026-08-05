@@ -5,6 +5,8 @@ import type { InteractionStatus } from '@prisma/client';
 export type InteractionPatch = {
   status?: InteractionStatus;
   rating?: number | null;
+  /** Pin to the top of the active workspace's feed. */
+  pinned?: boolean;
   pros?: string[];
   cons?: string[];
   notes?: string | null;

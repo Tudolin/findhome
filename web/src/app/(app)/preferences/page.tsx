@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import PreferencesForm from '@/components/PreferencesForm';
 import { prisma } from '@/lib/prisma';
+import { getDictionary } from '@/lib/i18n/server';
 import { locationSlug } from '@/lib/locations';
 import { preferenceWarnings } from '@/lib/matching';
 import { getPreferenceProfile } from '@/lib/queries';
@@ -9,8 +10,20 @@ import { resolveWorkspace } from '@/lib/workspace';
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Preferences · FindHome' };
 
+/**
+ * Whether the server can actually deliver a WhatsApp message.
+ *
+ * Read here rather than in the client component: it is server-side config, and
+ * the form only needs to know whether to warn that alerts will go nowhere yet.
+ * Must stay in step with configuredProvider() in the scraper's notify/whatsapp.
+ */
+function whatsappConfigured(): boolean {
+  const provider = (process.env.WHATSAPP_PROVIDER ?? '').trim().toLowerCase();
+  return provider === 'webhook' || provider === 'cloud' || provider === 'callmebot';
+}
+
 export default async function PreferencesPage() {
-  const ws = await resolveWorkspace();
+  const [ws, t] = await Promise.all([resolveWorkspace(), getDictionary()]);
   const profile = await getPreferenceProfile(ws);
 
   // Suggest neighborhoods that actually exist in the scraped data for the
@@ -41,18 +54,16 @@ export default async function PreferencesPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-black tracking-tight text-ink-900">Search preferences</h1>
+        <h1 className="text-2xl font-black tracking-tight text-ink-900">{t.preferences.title}</h1>
         <p className="mt-2 text-sm text-ink-500">
-          {ws.kind === 'PARTY'
-            ? `Shared by everyone in ${ws.name}. Changes apply to the whole party's feed.`
-            : 'Private to your personal search. Party workspaces keep their own separate profile.'}
+          {ws.kind === 'PARTY' ? t.preferences.subtitleParty(ws.name) : t.preferences.subtitleSolo}
         </p>
       </div>
 
       {warnings.length > 0 && (
         <div className="mb-5 rounded-2xl bg-surface px-5 py-3.5 shadow-neu">
           {warnings.map((warning) => (
-            <p key={warning} className="text-xs text-amber-700">
+            <p key={warning} className="text-xs text-warning">
               {warning}
             </p>
           ))}
@@ -64,14 +75,15 @@ export default async function PreferencesPage() {
         workspaceName={ws.name}
         workspaceKind={ws.kind}
         knownNeighborhoods={knownNeighborhoods}
+        whatsappConfigured={whatsappConfigured()}
       />
 
       <p className="mt-5 text-center text-xs text-ink-400">
-        Saving here changes what the scraper looks for on its next run. To pull listings immediately, use{' '}
+        {t.preferences.scrapeHint}{' '}
         <Link href="/dashboard" className="font-semibold text-brand-700 hover:text-brand-800">
-          Scrape now
+          {t.scrape.now}
         </Link>{' '}
-        on the discovery feed.
+        {t.preferences.onTheFeed}
       </p>
     </div>
   );

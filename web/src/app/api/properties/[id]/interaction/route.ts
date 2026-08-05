@@ -10,6 +10,7 @@ type Ctx = { params: Promise<{ id: string }> };
 const schema = z.object({
   status: z.enum(['DISCOVERED', 'INTERESTED', 'FAVORITE', 'VISIT_SCHEDULED', 'APPLIED', 'REJECTED']).optional(),
   rating: z.number().int().min(1).max(5).nullable().optional(),
+  pinned: z.boolean().optional(),
   pros: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
   cons: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
   notes: z.string().max(4000).nullable().optional(),
@@ -40,8 +41,12 @@ export const PUT = handler(async (req: Request, { params }: Ctx) => {
       userId: ws.userId,
       partyId: ws.partyId,
       scopeKey: ws.scopeKey,
-      status: patch.status ?? 'INTERESTED',
+      // Pinning alone must not imply interest: a pin is "keep this in front of
+      // me while I decide", so it leaves the status at DISCOVERED unless the
+      // caller also set one.
+      status: patch.status ?? (patch.pinned ? 'DISCOVERED' : 'INTERESTED'),
       rating: patch.rating ?? null,
+      pinned: patch.pinned ?? false,
       pros: patch.pros ?? [],
       cons: patch.cons ?? [],
       notes: patch.notes ?? null,
