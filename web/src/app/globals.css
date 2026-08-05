@@ -1,0 +1,157 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    /* Neumorphism needs the page and its cards to share one background — the
+       depth comes from the shadows, not from a colour change. */
+    @apply bg-surface text-ink-800 antialiased;
+  }
+  ::selection {
+    @apply bg-brand-200 text-brand-900;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-400 ring-offset-2 ring-offset-surface;
+  }
+}
+
+@layer components {
+  /* ---- surfaces ------------------------------------------------------- */
+  .card {
+    @apply rounded-2xl bg-surface shadow-neu;
+  }
+  .card-flat {
+    @apply rounded-2xl bg-surface shadow-neu-sm;
+  }
+  /* A recessed well — use for grouped/secondary content inside a card. */
+  .well {
+    @apply rounded-2xl bg-surface shadow-neu-inset;
+  }
+  .well-sm {
+    @apply rounded-xl bg-surface shadow-neu-inset-sm;
+  }
+
+  /* ---- buttons -------------------------------------------------------- */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-4 py-2
+           text-sm font-semibold transition-all duration-150 ease-neu
+           disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-neu-sm;
+  }
+  .btn-primary {
+    @apply btn bg-brand-400 text-brand-950 shadow-neu-brand
+           hover:bg-brand-300 active:shadow-neu-brand-inset active:text-brand-900;
+  }
+  .btn-ghost {
+    @apply btn bg-surface text-ink-700 shadow-neu-sm hover:text-ink-900 active:shadow-neu-inset-sm;
+  }
+  .btn-danger {
+    @apply btn bg-surface text-rose-700 shadow-neu-sm hover:text-rose-800 active:shadow-neu-inset-sm;
+  }
+
+  /* ---- form controls -------------------------------------------------- */
+  /* Inputs read as carved into the surface, the inverse of a button. */
+  .input {
+    @apply w-full rounded-xl border-0 bg-surface px-4 py-2.5 text-sm text-ink-800
+           shadow-neu-inset outline-none transition-shadow duration-150
+           placeholder:text-ink-400
+           focus:shadow-neu-inset focus:ring-2 focus:ring-brand-300;
+  }
+  select.input {
+    @apply cursor-pointer appearance-none bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23788b6d'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5z'/%3E%3C/svg%3E");
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+  }
+  .label {
+    @apply mb-2 block text-xs font-bold uppercase tracking-wider text-ink-500;
+  }
+
+  /* ---- chips & toggles ------------------------------------------------ */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold;
+  }
+  .chip-raised {
+    @apply chip bg-surface text-ink-600 shadow-neu-sm;
+  }
+  /* Unselected = extruded, selected = pressed in. That press is the whole
+     affordance in this style, so it has to be unmistakable. */
+  .tag-toggle {
+    @apply chip cursor-pointer bg-surface text-ink-600 shadow-neu-sm
+           transition-all duration-150 ease-neu hover:text-ink-800;
+  }
+  /* The ring is deliberate: an inset shadow alone is a weak "selected" signal
+     at chip size, and low-contrast state is neumorphism's known failure mode. */
+  .tag-toggle-on {
+    @apply bg-surface text-brand-800 shadow-neu-inset-sm ring-1 ring-brand-300;
+  }
+  .pressed-on {
+    @apply bg-surface text-brand-800 shadow-neu-inset-sm ring-1 ring-brand-300;
+  }
+  .pressed-off {
+    @apply bg-surface text-ink-600 shadow-neu-sm hover:text-ink-900;
+  }
+}
+
+@layer utilities {
+  /* Semantic tints. Kept as pressed wells so coloured state never breaks the
+     single-surface rule; the colour lives in the text, not a filled block. */
+  .tint-pro {
+    @apply bg-surface text-brand-800 shadow-neu-inset-sm;
+  }
+  .tint-con {
+    @apply bg-surface text-rose-700 shadow-neu-inset-sm;
+  }
+}
+
+/* Range sliders: recessed track, extruded thumb. */
+input[type='range'] {
+  @apply h-3 w-full cursor-pointer appearance-none rounded-full bg-surface;
+  box-shadow: inset 2px 2px 5px #c7d3bc, inset -2px -2px 5px #ffffff;
+}
+input[type='range']::-webkit-slider-thumb {
+  @apply h-5 w-5 appearance-none rounded-full bg-brand-400;
+  box-shadow: 2px 2px 5px #a9b89e, -2px -2px 5px #ffffff;
+}
+input[type='range']::-moz-range-thumb {
+  @apply h-5 w-5 rounded-full border-0 bg-brand-400;
+  box-shadow: 2px 2px 5px #a9b89e, -2px -2px 5px #ffffff;
+}
+
+/* Checkboxes: same recessed-to-pressed language as the toggles. */
+input[type='checkbox'] {
+  @apply h-5 w-5 cursor-pointer appearance-none rounded-md bg-surface transition-all duration-150;
+  box-shadow: inset 2px 2px 4px #c7d3bc, inset -2px -2px 4px #ffffff;
+}
+input[type='checkbox']:checked {
+  @apply bg-brand-400;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23192b14'%3E%3Cpath d='M6.2 11.8 3 8.6l1.1-1.1 2.1 2.1 5.7-5.7L13 5z'/%3E%3C/svg%3E");
+  background-size: 1rem;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: 2px 2px 4px #a9b89e, -2px -2px 4px #ffffff;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  @apply rounded-full bg-surface;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-ink-300;
+}
+
+/* Skeletons for the loading.tsx routes. */
+@keyframes neu-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.skeleton {
+  @apply rounded-xl bg-surface shadow-neu-inset-sm;
+  animation: neu-pulse 1.6s ease-in-out infinite;
+}

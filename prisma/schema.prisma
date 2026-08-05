@@ -1,0 +1,263 @@
+// FindHome — shared Prisma schema.
+// Single source of truth for both the `web` (Next.js) and `scraper` services.
+// Both Docker images copy this folder to /app/prisma and reference it as ../prisma/schema.prisma.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum PartyRole {
+  OWNER
+  MEMBER
+}
+
+enum InteractionStatus {
+  DISCOVERED
+  INTERESTED
+  FAVORITE
+  VISIT_SCHEDULED
+  APPLIED
+  REJECTED
+}
+
+enum ListingType {
+  RENT
+  SALE
+}
+
+enum PropertySource {
+  ZAP
+  VIVA_REAL
+  QUINTO_ANDAR
+  OLX
+  MANUAL
+  DEMO
+}
+
+enum ScrapeStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  createdParties    Party[]               @relation("PartyCreator")
+  memberships       PartyMember[]
+  preferenceProfile PreferenceProfile?    @relation("SoloPreferences")
+  interactions      PropertyInteraction[]
+  comments          PropertyComment[]
+
+  @@map("users")
+}
+
+model Party {
+  id              String   @id @default(cuid())
+  name            String
+  inviteCode      String   @unique @map("invite_code")
+  createdByUserId String   @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  createdBy         User                  @relation("PartyCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  members           PartyMember[]
+  preferenceProfile PreferenceProfile?    @relation("PartyPreferences")
+  interactions      PropertyInteraction[]
+  comments          PropertyComment[]
+
+  @@index([createdByUserId])
+  @@map("parties")
+}
+
+model PartyMember {
+  id       String    @id @default(cuid())
+  partyId  String    @map("party_id")
+  userId   String    @map("user_id")
+  role     PartyRole @default(MEMBER)
+  joinedAt DateTime  @default(now()) @map("joined_at")
+
+  party Party @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partyId, userId])
+  @@index([userId])
+  @@map("party_members")
+}
+
+// ---------------------------------------------------------------------------
+// Search preferences
+// ---------------------------------------------------------------------------
+
+// Exactly one of userId / partyId is set:
+//   userId set  -> the owner's Solo Mode profile (one per user)
+//   partyId set -> the shared profile of a Party (one per party)
+model PreferenceProfile {
+  id      String  @id @default(cuid())
+  userId  String? @unique @map("user_id")
+  partyId String? @unique @map("party_id")
+
+  city          String
+  neighborhoods String[] @default([])
+
+  listingType             ListingType @default(RENT) @map("listing_type")
+  minPrice                Int?        @map("min_price")
+  maxPrice                Int?        @map("max_price")
+  // When true, maxPrice is compared against (rent + condo fee + taxes),
+  // otherwise it is compared against the bare rent price.
+  includeCondoInMaxPrice  Boolean     @default(true) @map("include_condo_in_max_price")
+
+  minBedrooms     Int @default(0) @map("min_bedrooms")
+  minBathrooms    Int @default(0) @map("min_bathrooms")
+  minParkingSpots Int @default(0) @map("min_parking_spots")
+  minSqm          Int @default(0) @map("min_sqm")
+
+  petFriendly Boolean  @default(false) @map("pet_friendly")
+  amenities   String[] @default([])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User?  @relation("SoloPreferences", fields: [userId], references: [id], onDelete: Cascade)
+  party Party? @relation("PartyPreferences", fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@map("preference_profiles")
+}
+
+// ---------------------------------------------------------------------------
+// Listings
+// ---------------------------------------------------------------------------
+
+model Property {
+  id         String         @id @default(cuid())
+  source     PropertySource @default(MANUAL)
+  externalId String         @map("external_id")
+  sourceUrl  String         @unique @map("source_url")
+
+  title        String
+  description  String?
+  address      String
+  neighborhood String
+  city         String
+  state        String?
+
+  // All money values are whole BRL (no cents) to keep filtering/sorting cheap.
+  rentPrice  Int @map("rent_price")
+  condoFee   Int @default(0) @map("condo_fee")
+  taxFee     Int @default(0) @map("tax_fee")
+  totalPrice Int @map("total_price")
+
+  bedrooms     Int      @default(0)
+  bathrooms    Int      @default(0)
+  parkingSpots Int      @default(0) @map("parking_spots")
+  sqm          Int      @default(0)
+  images       String[] @default([])
+  amenities    String[] @default([])
+  petFriendly  Boolean? @map("pet_friendly")
+
+  latitude  Float?
+  longitude Float?
+
+  listingType ListingType @default(RENT) @map("listing_type")
+  active      Boolean     @default(true)
+  lastSeenAt  DateTime    @default(now()) @map("last_seen_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  interactions PropertyInteraction[]
+  comments     PropertyComment[]
+
+  // De-duplication key for the scraping engine.
+  @@unique([source, externalId])
+  @@index([city, neighborhood])
+  @@index([totalPrice])
+  @@index([createdAt])
+  @@map("properties")
+}
+
+// One row per (property, user, workspace).
+// `scopeKey` is "solo" for Solo Mode or the party id for Party Mode. It exists
+// because Postgres treats NULLs as distinct in unique indexes, which would
+// otherwise let duplicate solo interactions through.
+model PropertyInteraction {
+  id         String  @id @default(cuid())
+  propertyId String  @map("property_id")
+  userId     String  @map("user_id")
+  partyId    String? @map("party_id")
+  scopeKey   String  @map("scope_key")
+
+  status InteractionStatus @default(DISCOVERED)
+  rating Int? // 1-5 stars
+
+  pros  String[] @default([])
+  cons  String[] @default([])
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  party    Party?   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, userId, scopeKey])
+  @@index([scopeKey, status])
+  @@index([partyId])
+  @@map("property_interactions")
+}
+
+// Discussion thread under a property, scoped to a workspace.
+model PropertyComment {
+  id         String  @id @default(cuid())
+  propertyId String  @map("property_id")
+  userId     String  @map("user_id")
+  partyId    String? @map("party_id")
+  scopeKey   String  @map("scope_key")
+  body       String
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  party    Party?   @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, scopeKey])
+  @@map("property_comments")
+}
+
+// ---------------------------------------------------------------------------
+// Scraper observability
+// ---------------------------------------------------------------------------
+
+model ScrapeRun {
+  id         String         @id @default(cuid())
+  source     PropertySource
+  status     ScrapeStatus   @default(RUNNING)
+  startedAt  DateTime       @default(now()) @map("started_at")
+  finishedAt DateTime?      @map("finished_at")
+
+  listingsFound   Int    @default(0) @map("listings_found")
+  listingsCreated Int    @default(0) @map("listings_created")
+  listingsUpdated Int    @default(0) @map("listings_updated")
+  error           String?
+
+  @@index([source, startedAt])
+  @@map("scrape_runs")
+}

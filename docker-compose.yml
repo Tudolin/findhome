@@ -1,0 +1,144 @@
+# FindHome — single-file orchestration for a Linux home server.
+#
+#   docker compose up -d --build
+#
+# Services:
+#   db       PostgreSQL 16 with a persistent named volume
+#   migrate  one-shot: applies Prisma migrations, then exits
+#   web      Next.js app (UI + REST API)
+#   scraper  headless Playwright engine on an internal cron
+#
+# Everything talks over the private `findhome` bridge network. Only `web`
+# publishes a port, and it binds to ${BIND_ADDRESS} (0.0.0.0 by default so the
+# LAN can reach it — set it to 127.0.0.1 when a reverse proxy fronts the app).
+
+name: findhome
+
+x-db-env: &db-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-findhome}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-findhome}?schema=public&connection_limit=5
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: findhome-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-findhome}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-findhome}
+      # Speeds up initdb and keeps collation stable across host locales.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Drop pg_dump output here: docker compose exec db pg_dump ... > /backups/x.sql
+      - ./backups:/backups
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-findhome} -d ${POSTGRES_DB:-findhome}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [findhome]
+    # Uncomment ONLY if you need a desktop SQL client on the LAN.
+    # ports:
+    #   - '${BIND_ADDRESS:-127.0.0.1}:5432:5432'
+    deploy:
+      resources:
+        limits:
+          memory: ${DB_MEMORY_LIMIT:-512M}
+
+  migrate:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      target: tools
+    container_name: findhome-migrate
+    environment:
+      <<: *db-env
+    depends_on:
+      db:
+        condition: service_healthy
+    # One-shot: runs `prisma migrate deploy` (the image CMD) and exits 0.
+    restart: 'no'
+    networks: [findhome]
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      target: runner
+    container_name: findhome-web
+    restart: unless-stopped
+    environment:
+      <<: *db-env
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      MAX_PARTY_MEMBERS: ${MAX_PARTY_MEMBERS:-6}
+      TZ: ${TZ:-America/Sao_Paulo}
+    ports:
+      - '${BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-3000}:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [findhome]
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-512M}
+
+  scraper:
+    build:
+      context: .
+      dockerfile: scraper/Dockerfile
+      target: runner
+    container_name: findhome-scraper
+    restart: unless-stopped
+    environment:
+      <<: *db-env
+      NODE_ENV: production
+      TZ: ${TZ:-America/Sao_Paulo}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SCRAPE_CRON: ${SCRAPE_CRON:-0 8,20 * * *}
+      SCRAPE_SOURCES: ${SCRAPE_SOURCES:-DEMO}
+      SCRAPE_ON_START: ${SCRAPE_ON_START:-true}
+      SCRAPE_MAX_PAGES: ${SCRAPE_MAX_PAGES:-2}
+      SCRAPE_PAGE_SIZE: ${SCRAPE_PAGE_SIZE:-40}
+      SCRAPE_DELAY_MS: ${SCRAPE_DELAY_MS:-1500}
+      SCRAPE_STALE_DAYS: ${SCRAPE_STALE_DAYS:-21}
+      SCRAPE_DEFAULT_CITY: ${SCRAPE_DEFAULT_CITY:-São Paulo}
+      SCRAPE_DEFAULT_STATE: ${SCRAPE_DEFAULT_STATE:-SP}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # Chromium's default 64MB /dev/shm is not enough and it will crash on
+    # image-heavy pages. src/browser.ts also passes --disable-dev-shm-usage.
+    shm_size: ${SCRAPER_SHM_SIZE:-512mb}
+    networks: [findhome]
+    deploy:
+      resources:
+        limits:
+          memory: ${SCRAPER_MEMORY_LIMIT:-1G}
+
+volumes:
+  pgdata:
+    name: findhome-pgdata
+
+networks:
+  findhome:
+    name: findhome
+    driver: bridge
+  # --- Reverse proxy (Nginx Proxy Manager / Traefik) -------------------------
+  # NPM and Traefik can only route to a container they share a network with.
+  # Uncomment the block below, add `proxy` to the `web` service's networks, and
+  # set BIND_ADDRESS=127.0.0.1 so the app is reachable only through the proxy.
+  #
+  # proxy:
+  #   external: true
+  #   name: proxy

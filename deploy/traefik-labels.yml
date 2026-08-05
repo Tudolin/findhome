@@ -1,0 +1,31 @@
+# Traefik v3 — drop-in overlay for the `web` service.
+#
+#   docker compose -f docker-compose.yml -f deploy/traefik-labels.yml up -d
+#
+# Assumes Traefik is already running on this host and attached to an external
+# network called `proxy` with an entrypoint named `websecure` and a cert
+# resolver named `le`. Adjust the names to match your setup.
+#
+# Also set BIND_ADDRESS=127.0.0.1 in .env — with Traefik in front there is no
+# reason to publish 3000 on the LAN.
+
+services:
+  web:
+    networks:
+      - findhome
+      - proxy
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: proxy
+      traefik.http.routers.findhome.rule: Host(`findhome.example.com`)
+      traefik.http.routers.findhome.entrypoints: websecure
+      traefik.http.routers.findhome.tls.certresolver: le
+      traefik.http.services.findhome.loadbalancer.server.port: '3000'
+      # Tell the app it is behind TLS (pair with COOKIE_SECURE=true in .env).
+      traefik.http.middlewares.findhome-proto.headers.customrequestheaders.X-Forwarded-Proto: https
+      traefik.http.routers.findhome.middlewares: findhome-proto
+
+networks:
+  proxy:
+    external: true
+    name: proxy

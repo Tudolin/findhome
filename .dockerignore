@@ -1,0 +1,12 @@
+# Build context is the repo root for both images — keep it small.
+.git
+.github
+backups
+**/node_modules
+**/.next
+**/dist
+**/npm-debug.log
+.env
+.env.local
+README.md
+deploy
