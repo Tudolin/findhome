@@ -311,12 +311,12 @@ export default function FeedControls({
           out of sight must still be submitted, or collapsing the row would
           silently clear it. */}
       <div className={clsx('well mt-4 space-y-5 p-4', !expanded && 'hidden')}>
-        {/* --- Neighborhoods: the filter people actually want two of at once --- */}
+        {/* --- Neighborhoods: the filter people actually want two of at once ---
+            role="group" + aria-label rather than fieldset/legend: a <legend> must
+            be the first child of its <fieldset>, which rules out putting the
+            search box on the same line as the label. The grouping semantics are
+            identical either way. */}
         {visibleHoods.length > 0 && (
-          {/* role="group" + aria-label rather than fieldset/legend: a <legend>
-              must be the first child of its <fieldset>, which rules out putting
-              the search box on the same line as the label. The grouping semantics
-              are identical either way. */}
           <div role="group" aria-label={t.filters.neighborhoods}>
             <div className="mb-2 flex items-center justify-between gap-3">
               <span className="label !mb-0">

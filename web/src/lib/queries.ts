@@ -445,12 +445,25 @@ export type FeedResult = {
   preferences: Awaited<ReturnType<typeof getPreferenceProfile>>;
 };
 
-type PropertyRow = Prisma.PropertyGetPayload<{
-  include: {
-    interactions: { include: { user: { select: { id: true; name: true } } } };
-    _count: { select: { comments: true } };
-  };
-}>;
+/**
+ * What the feed loads with every property: this workspace's interactions (and
+ * only those — see `ownRows`) plus its own comment count.
+ *
+ * Declared as a factory so the row type below is *derived* from the real query
+ * rather than hand-written to match it. A hand-written payload type is a second
+ * source of truth that drifts silently the first time the include changes.
+ */
+function feedInclude(ws: Workspace) {
+  return {
+    interactions: {
+      where: ownRows(ws),
+      include: { user: { select: { id: true, name: true } } },
+    },
+    _count: { select: { comments: { where: ownRows(ws) } } },
+  } satisfies Prisma.PropertyInclude;
+}
+
+type PropertyRow = Prisma.PropertyGetPayload<{ include: ReturnType<typeof feedInclude> }>;
 
 export type FeedItem = PropertyRow & {
   partyScore: PartyScore;
@@ -477,13 +490,7 @@ export async function getFeed(ws: Workspace, opts: FeedOptions = {}): Promise<Fe
     where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), ...conditions];
   }
 
-  const include = {
-    interactions: {
-      where: ownRows(ws),
-      include: { user: { select: { id: true, name: true } } },
-    },
-    _count: { select: { comments: { where: ownRows(ws) } } },
-  } satisfies Prisma.PropertyInclude;
+  const include = feedInclude(ws);
 
   const sqlOrder = SQL_ORDER[sort];
   const rankInMemory = sqlOrder === undefined;
