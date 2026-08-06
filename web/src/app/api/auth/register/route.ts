@@ -2,7 +2,8 @@ import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { hashPassword, signSession, setSessionCookie, WORKSPACE_COOKIE } from '@/lib/auth';
-import { conflict, forbidden, handler, ok } from '@/lib/http';
+import { conflict, forbidden, handler, ok, tooManyRequests } from '@/lib/http';
+import { callerIp, consume, LIMITS } from '@/lib/rate-limit';
 
 const schema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -16,6 +17,17 @@ export const POST = handler(async (req: Request) => {
   // Set ALLOW_REGISTRATION=false once your household has accounts.
   if (process.env.ALLOW_REGISTRATION === 'false') {
     throw forbidden('Registration is disabled on this server');
+  }
+
+  // Creating an account is rare and costs a bcrypt hash, so a burst is abuse.
+  // This only matters while registration is open — which it should not be once
+  // the household has its accounts.
+  const ip = await callerIp();
+  for (const gate of [
+    ip ? consume(`register:ip:${ip}`, LIMITS.registerPerIp) : ({ ok: true } as const),
+    consume('register:global', LIMITS.registerGlobal),
+  ]) {
+    if (!gate.ok) throw tooManyRequests(gate.retryAfterSeconds);
   }
 
   const { name, email, password, inviteCode } = schema.parse(await req.json());

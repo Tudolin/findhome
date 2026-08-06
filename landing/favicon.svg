@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="FindHome">
+  <rect width="64" height="64" rx="16" fill="#93c572" />
+  <!-- Telhado + porta: a casa reduzida ao mínimo que ainda lê a 16px. -->
+  <path
+    d="M14 30.5 32 15l18 15.5"
+    fill="none"
+    stroke="#192b14"
+    stroke-width="5.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M19 32v16h26V32"
+    fill="none"
+    stroke="#192b14"
+    stroke-width="5.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <rect x="28.5" y="38" width="7" height="10" rx="1.5" fill="#192b14" />
+</svg>

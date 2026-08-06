@@ -69,6 +69,31 @@ function upgradeImage(url: string): string {
   return url.replace(/\/imn\/\d+X\d+\//i, '/imn/1600X1200/');
 }
 
+/**
+ * schema.org `image`, in every shape it is published in.
+ *
+ * The spec allows a URL, an array of URLs, an `ImageObject`, or an array of
+ * those. Chaves na Mão currently sends a single URL for most offers and an array
+ * for a few, and reading it as `clean(item.image)` — which only accepts a string
+ * — returned "" for exactly the offers that had more than one photo. The rest of
+ * the gallery still lives on the listing page (see scraper/src/photos.ts); this
+ * just stops us throwing away the ones that are right here.
+ */
+function imageUrls(value: unknown): string[] {
+  const collect = (node: unknown, depth = 0): string[] => {
+    if (depth > 3 || !node) return [];
+    if (typeof node === 'string') return [clean(node, 500)];
+    if (Array.isArray(node)) return node.flatMap((item) => collect(item, depth + 1));
+    if (typeof node === 'object') {
+      const record = node as Record<string, unknown>;
+      return collect(record.contentUrl ?? record.url ?? record['@id'], depth + 1);
+    }
+    return [];
+  };
+
+  return unique(collect(value).filter((url) => /^https?:/.test(url)).map(upgradeImage)).slice(0, 12);
+}
+
 /** The listing id is the /id-NNNNNNNN/ segment of the URL. */
 function idFromUrl(url: string): string {
   const match = url.match(/\/id-(\d+)/);
@@ -109,7 +134,7 @@ export function mapOffer(offer: Offer, target: SearchTarget): RawListing | null 
   // carries the area ("...-vila-mariana-23m2-RS1750/id-43987622/"). Falling back
   // to it keeps the m² filter usable instead of storing 0.
   const sqmFromUrl = toInt(url.match(/-(\d+)m2[-/]/)?.[1]);
-  const image = clean(item.image ?? offer.image, 500);
+  const images = imageUrls(item.image ?? offer.image);
   const agent = clean((offer.offeredBy as Offer | undefined)?.name, 120);
 
   const latitude = Number.parseFloat(clean(geo.latitude, 40));
@@ -135,7 +160,7 @@ export function mapOffer(offer: Offer, target: SearchTarget): RawListing | null 
     parkingSpots: 0,
     // "112m²" — toInt takes the leading digits.
     sqm: toInt(floorSize.unitText ?? floorSize.value) || sqmFromUrl,
-    images: unique([upgradeImage(image)].filter(Boolean)),
+    images,
     amenities: [],
     petFriendly: detectPetPolicy(title),
     latitude: Number.isFinite(latitude) ? latitude : null,

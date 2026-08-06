@@ -6,6 +6,7 @@ import { logger } from './logger.js';
 import { getParser, mayNeedBrowser } from './parsers/index.js';
 import { deactivateStale, persistListings } from './persist.js';
 import { geocodePending } from './geocode.js';
+import { backfillPhotos } from './photos.js';
 import { runAlerts } from './notify/alerts.js';
 import { buildSearchTargets, describeTarget } from './targets.js';
 import type { Transport } from './http.js';
@@ -153,6 +154,14 @@ export async function runScrape(sources: PropertySource[] = config.sources): Pro
         outcomes.push({ source, status: 'FAILED', ...totals, note: message });
       }
     }
+
+    // Galleries, while Chromium is still up.
+    //
+    // Has to happen inside this block rather than beside geocoding below: the
+    // `finally` closes the browser pool, and this pass needs a page. Never
+    // allowed to fail the run — a portal that refuses a listing page has not
+    // broken the scrape, it has just cost us some photos.
+    await backfillPhotos(browsers).catch((err) => log.error('photo backfill failed', err));
   } finally {
     await api.dispose().catch(() => undefined);
     await browsers.close();

@@ -12,7 +12,7 @@ export
 .DEFAULT_GOAL := help
 .PHONY: help setup up down restart build rebuild logs logs-web logs-scraper ps \
         migrate seed scrape scrape-now scrape-demo doctor shell-db psql backup \
-        restore update prune status scrape-status
+        restore update prune status scrape-status photos
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -80,6 +80,9 @@ scrape-status: ## Show the last run's outcome per source
 
 doctor: ## Probe every configured portal and report what is broken and why
 	$(COMPOSE) exec scraper node dist/doctor.js $(SOURCES)
+
+photos: ## Fetch full galleries for listings stored with only a cover photo: make photos [N=400]
+	$(COMPOSE) exec $(if $(N),-e PHOTOS_MAX_PER_RUN=$(N),) scraper node dist/photos-cli.js
 
 psql shell-db: ## Open a psql prompt on the database
 	$(COMPOSE) exec db psql -U $${POSTGRES_USER:-findhome} -d $${POSTGRES_DB:-findhome}

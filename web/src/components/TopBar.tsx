@@ -35,6 +35,9 @@ export default function TopBar({
 
   const nav = [
     { href: '/dashboard', label: t.nav.discovery },
+    // Second, right next to Discovery: it is the other half of the same loop —
+    // you find listings on one and judge them on the other.
+    { href: '/my-homes', label: t.nav.myHomes },
     { href: '/map', label: t.nav.map },
     { href: '/visits', label: t.nav.visits },
     { href: '/co-op', label: t.nav.coop },

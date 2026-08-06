@@ -217,6 +217,19 @@ model Property {
   /// Set even on a miss, so an unresolvable address is not retried forever.
   geocodedAt DateTime? @map("geocoded_at")
 
+  /// When the gallery backfill last opened this listing's own page, whether or
+  /// not it found more photos.
+  ///
+  /// Search results only carry the cover photo on half the portals (OLX and
+  /// Chaves na Mão publish exactly one; ImovelWeb's carousel is lazy-loaded), so
+  /// the rest of the gallery only exists on the listing's own page. This column
+  /// is what keeps that pass from re-visiting the same listing every run — see
+  /// scraper/src/photos.ts.
+  photosFetchedAt DateTime? @map("photos_fetched_at")
+  /// How many photos the listing's own page yielded. 0 means "asked, found
+  /// nothing", which is different from "never asked" (photosFetchedAt is null).
+  photoCount      Int       @default(0) @map("photo_count")
+
   listingType ListingType @default(RENT) @map("listing_type")
   active      Boolean     @default(true)
   lastSeenAt  DateTime    @default(now()) @map("last_seen_at")
@@ -234,6 +247,8 @@ model Property {
   @@index([citySlug, neighborhoodSlug])
   @@index([totalPrice])
   @@index([createdAt])
+  // Drives the gallery backfill's "needs photos, never tried" scan.
+  @@index([photosFetchedAt, photoCount])
   @@map("properties")
 }
 

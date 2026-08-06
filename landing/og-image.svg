@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img"
+     aria-label="FindHome — todos os portais, um feed, uma decisão">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#252b22" />
+      <stop offset="1" stop-color="#171d15" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.15" cy="0.1" r="0.75">
+      <stop offset="0" stop-color="#93c572" stop-opacity="0.42" />
+      <stop offset="1" stop-color="#93c572" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.9" cy="0.85" r="0.6">
+      <stop offset="0" stop-color="#6a9e4e" stop-opacity="0.38" />
+      <stop offset="1" stop-color="#6a9e4e" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#93c572" />
+      <stop offset="1" stop-color="#dcf0c6" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect width="1200" height="630" fill="url(#glow)" />
+  <rect width="1200" height="630" fill="url(#glow2)" />
+
+  <!-- Marca -->
+  <rect x="80" y="76" width="62" height="62" rx="18" fill="#93c572" />
+  <text x="111" y="118" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="24"
+        font-weight="900" fill="#192b14" text-anchor="middle">FH</text>
+  <text x="162" y="118" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30"
+        font-weight="800" fill="#f0f5ec">FindHome</text>
+
+  <!-- Título -->
+  <text font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="82" font-weight="900"
+        fill="#f0f5ec" letter-spacing="-3">
+    <tspan x="80" y="300">Todos os portais.</tspan>
+    <tspan x="80" y="392">Um feed.</tspan>
+    <tspan x="80" y="484" fill="url(#word)">Uma decisão.</tspan>
+  </text>
+
+  <!-- Portais -->
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="21" font-weight="700"
+     fill="#b6c4ab">
+    <rect x="80" y="536" width="152" height="42" rx="21" fill="#171d15" fill-opacity="0.6"
+          stroke="#f0f5ec" stroke-opacity="0.1" />
+    <text x="156" y="563" text-anchor="middle">Zap Imóveis</text>
+
+    <rect x="244" y="536" width="128" height="42" rx="21" fill="#171d15" fill-opacity="0.6"
+          stroke="#f0f5ec" stroke-opacity="0.1" />
+    <text x="308" y="563" text-anchor="middle">Viva Real</text>
+
+    <rect x="384" y="536" width="158" height="42" rx="21" fill="#171d15" fill-opacity="0.6"
+          stroke="#f0f5ec" stroke-opacity="0.1" />
+    <text x="463" y="563" text-anchor="middle">QuintoAndar</text>
+
+    <rect x="554" y="536" width="76" height="42" rx="21" fill="#171d15" fill-opacity="0.6"
+          stroke="#f0f5ec" stroke-opacity="0.1" />
+    <text x="592" y="563" text-anchor="middle">OLX</text>
+
+    <rect x="642" y="536" width="142" height="42" rx="21" fill="#171d15" fill-opacity="0.6"
+          stroke="#f0f5ec" stroke-opacity="0.1" />
+    <text x="713" y="563" text-anchor="middle">ImovelWeb</text>
+
+    <rect x="796" y="536" width="176" height="42" rx="21" fill="#171d15" fill-opacity="0.6"
+          stroke="#f0f5ec" stroke-opacity="0.1" />
+    <text x="884" y="563" text-anchor="middle">Chaves na Mão</text>
+  </g>
+
+  <!-- Cartão de nota, o mesmo elemento que a hero destaca -->
+  <g transform="translate(880 210)">
+    <rect x="0" y="0" width="240" height="150" rx="24" fill="#2c3328" fill-opacity="0.95"
+          stroke="#93c572" stroke-opacity="0.4" stroke-width="2" />
+    <text x="28" y="44" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="17"
+          font-weight="800" fill="#6b7a62" letter-spacing="2">NOTA DA PARTY</text>
+    <text x="28" y="112" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="66"
+          font-weight="900" fill="#a3d184" letter-spacing="-3">92</text>
+    <text x="120" y="112" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19"
+          fill="#94a389">vocês dois</text>
+    <text x="120" y="134" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19"
+          fill="#94a389">concordam</text>
+  </g>
+</svg>

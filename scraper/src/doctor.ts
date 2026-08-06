@@ -4,6 +4,7 @@ import { ALL_SOURCES, config, parseSources } from './config.js';
 import { prisma } from './db.js';
 import { requestJson, type JsonResult, type Transport } from './http.js';
 import { logger } from './logger.js';
+import { PHOTOS_STATUS } from './photos.js';
 import { buildSearchTargets, describeTarget } from './targets.js';
 import { applyTargetFilters } from './parsers/util.js';
 import { extractListings, GRUPOZAP_PROBE, mapListing } from './parsers/grupozap.js';
@@ -51,6 +52,39 @@ type Probe = {
 };
 
 const line = '-'.repeat(72);
+
+/**
+ * How many photos each source's SEARCH RESPONSE carries.
+ *
+ * Reported separately from the health verdict because a source can be perfectly
+ * healthy and still hand over one photo per listing — that is what OLX, Chaves na
+ * Mao and ImovelWeb do, and the carousels being one photo long is the visible
+ * symptom people report as a bug. Saying so here, next to the sample, is what
+ * distinguishes "the parser lost the gallery" from "the gallery is not in this
+ * response and the backfill pass will fetch it".
+ */
+function printPhotoReport(probes: Probe[]): void {
+  const withSample = probes.filter((p) => p.sample !== null);
+  if (withSample.length === 0) return;
+
+  console.log(`\n${line}`);
+  console.log('PHOTOS PER LISTING (from the search response only)');
+  console.log(line);
+
+  for (const probe of withSample) {
+    const count = probe.sample?.images?.length ?? 0;
+    const backfilled = !PHOTOS_STATUS.skipsSources.includes(probe.source);
+    const verdict =
+      count >= PHOTOS_STATUS.minImages
+        ? 'full gallery in the search response'
+        : backfilled
+          ? PHOTOS_STATUS.enabled
+            ? 'cover only -> the backfill pass will open the listing page'
+            : 'cover only -> PHOTOS_ENABLED=false, so nothing will fill it in'
+          : 'cover only, and this source is skipped by the backfill';
+    console.log(`  ${probe.source.padEnd(14)} ${String(count).padStart(2)} photo(s)   ${verdict}`);
+  }
+}
 
 function summarise(result: JsonResult): string {
   const status = result.status === 0 ? 'no response' : String(result.status);
@@ -354,6 +388,10 @@ async function main(): Promise<void> {
   console.log(line);
   console.log('FindHome scraper doctor');
   console.log(line);
+  console.log(
+    `photos:   backfill ${PHOTOS_STATUS.enabled ? 'ON' : 'OFF'} · ` +
+      `up to ${PHOTOS_STATUS.maxPerRun}/run · fills listings with < ${PHOTOS_STATUS.minImages} photo(s)`,
+  );
   console.log(`sources:  ${sources.join(', ')}   (all known: ${ALL_SOURCES.join(', ')})`);
   console.log(`target:   ${describeTarget(target)}`);
   console.log(`          citySlug=${target.citySlug} state=${target.state ?? 'NONE'} type=${target.listingType}`);
@@ -417,6 +455,8 @@ async function main(): Promise<void> {
   }
 
   for (const probe of probes) printProbe(probe);
+
+  printPhotoReport(probes);
 
   const failed = probes.filter((p) => !p.ok);
   console.log(`\n${line}`);

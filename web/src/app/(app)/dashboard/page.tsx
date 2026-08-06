@@ -1,43 +1,30 @@
 import Link from 'next/link';
 import FeedControls from '@/components/FeedControls';
+import Pagination from '@/components/Pagination';
 import PropertyCard from '@/components/PropertyCard';
 import ScrapeStatus from '@/components/ScrapeStatus';
 import { getDictionary } from '@/lib/i18n/server';
 import { describePreferences } from '@/lib/matching';
-import { getFeed, getFeedFacets, getLastScrapeRuns, isScrapeRunning, type FeedSort } from '@/lib/queries';
+import { parseFilters, parsePage, parsePerPage, parseSort, type RawSearchParams } from '@/lib/feed-params';
+import { getFeed, getFeedFacets, getLastScrapeRuns, isScrapeRunning } from '@/lib/queries';
 import { resolveWorkspace } from '@/lib/workspace';
 import type { UiProperty, UiWorkspace } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Discovery · FindHome' };
 
-type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-
-const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-const num = (v: string | string[] | undefined) => {
-  const parsed = Number(first(v));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-};
+type SearchParams = Promise<RawSearchParams>;
 
 export default async function DashboardPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const [ws, t] = await Promise.all([resolveWorkspace(), getDictionary()]);
 
-  const page = Number(first(sp.page) ?? 1) || 1;
   const [feed, runs, scraping, facets] = await Promise.all([
     getFeed(ws, {
-      sort: (first(sp.sort) as FeedSort) ?? 'newest',
-      q: first(sp.q),
-      status: (first(sp.status) as 'ALL') ?? 'ALL',
-      page,
-      perPage: 24,
-      ignorePreferences: first(sp.ignorePreferences) === 'true',
-      source: first(sp.source),
-      maxPrice: num(sp.maxPrice),
-      minBedrooms: num(sp.bedrooms),
-      minSqm: num(sp.minSqm),
-      neighborhood: first(sp.neighborhood),
-      pinnedOnly: first(sp.pinned) === 'true',
+      ...parseFilters(sp),
+      sort: parseSort(sp, 'newest'),
+      page: parsePage(sp),
+      perPage: parsePerPage(sp, 24),
     }),
     getLastScrapeRuns(),
     isScrapeRunning(),
@@ -50,17 +37,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     name: ws.name,
     members: ws.members,
     userId: ws.userId,
-  };
-
-  const totalPages = Math.max(1, Math.ceil(feed.total / feed.perPage));
-  const qs = (p: number) => {
-    const next = new URLSearchParams();
-    for (const [k, v] of Object.entries(sp)) {
-      const value = first(v);
-      if (value) next.set(k, value);
-    }
-    next.set('page', String(p));
-    return `/dashboard?${next.toString()}`;
   };
 
   return (
@@ -95,7 +71,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           page, and this one is force-dynamic. The boundary was re-mounting the
           toolbar on every navigation, which is half of why it stopped
           responding after the first filter change. */}
-      <FeedControls sources={facets.sources} neighborhoods={facets.neighborhoods} />
+      <FeedControls facets={facets} basePath="/dashboard" />
 
       <ScrapeStatus runs={runs} running={scraping} />
 
@@ -118,25 +94,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
         </div>
       )}
 
-      {totalPages > 1 && (
-        <nav className="mt-8 flex items-center justify-center gap-4">
-          {page > 1 ? (
-            <Link href={qs(page - 1)} className="btn-ghost">
-              {t.dashboard.previous}
-            </Link>
-          ) : (
-            <span />
-          )}
-          <span className="chip-raised tabular-nums">{t.dashboard.pageOf(page, totalPages)}</span>
-          {page < totalPages ? (
-            <Link href={qs(page + 1)} className="btn-ghost">
-              {t.dashboard.next}
-            </Link>
-          ) : (
-            <span />
-          )}
-        </nav>
-      )}
+      <Pagination
+        basePath="/dashboard"
+        searchParams={sp}
+        page={feed.page}
+        pageCount={feed.pageCount}
+        total={feed.total}
+        truncated={feed.truncated}
+      />
     </>
   );
 }

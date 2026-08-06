@@ -70,11 +70,26 @@ function readCards(): Card[] {
       for (let n = 0; n < nodes.length; n += 1) values.push(nodes[n].textContent?.trim() ?? '');
       return values.filter(Boolean);
     };
+    // Navent's card carousel is lazy: only the visible slide has a real `src`,
+    // the rest park theirs in `data-src`/`srcset` until Flickity swaps them in.
+    // Reading `src ?? data-src` (either/or) missed the ones that had both, which
+    // is why most cards yielded a single photo. All of them are collected now;
+    // the full gallery still comes from the listing page (see photos.ts).
     const images: string[] = [];
     const imgs = card.querySelectorAll('img');
     for (let n = 0; n < imgs.length; n += 1) {
-      const src = imgs[n].getAttribute('src') ?? imgs[n].getAttribute('data-src');
-      if (src) images.push(src);
+      const img = imgs[n];
+      for (const attr of ['src', 'data-src', 'data-flickity-lazyload', 'data-original']) {
+        const value = img.getAttribute(attr);
+        if (value) images.push(value);
+      }
+      const srcset = img.getAttribute('srcset') ?? img.getAttribute('data-srcset');
+      if (srcset) {
+        for (const entry of srcset.split(',')) {
+          const url = entry.trim().split(/\s+/)[0];
+          if (url) images.push(url);
+        }
+      }
     }
 
     out.push({
@@ -186,7 +201,14 @@ export function mapCard(card: Card, target: SearchTarget): RawListing | null {
     parkingSpots: feature(card.features, /vaga|garagem|cochera/i),
     // "1360 m² tot." — the total-area chip is the only area chip on most cards.
     sqm: feature(card.features, /m²/i),
-    images: unique(card.images.map((i) => upgradeImage(clean(i, 500))).filter(Boolean)).slice(0, 12),
+    // Only the ad CDN: a card also carries the agency's logo and Navent's own
+    // artwork, and those are not photos of the flat.
+    images: unique(
+      card.images
+        .map((i) => clean(i, 500))
+        .filter((i) => /^https?:/.test(i) && /imovelwebcdn|navent/i.test(i) && !/logo|sprite|icon/i.test(i))
+        .map(upgradeImage),
+    ).slice(0, 12),
     amenities: [],
     petFriendly: detectPetPolicy(description),
     listingType: target.listingType,

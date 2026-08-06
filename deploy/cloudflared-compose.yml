@@ -1,0 +1,56 @@
+# Cloudflare Tunnel — drop-in overlay that publishes the app over HTTPS with no
+# port forwarding and without exposing the home IP.
+#
+#   echo 'CLOUDFLARE_TUNNEL_TOKEN=ey...' >> .env
+#   docker compose -f docker-compose.yml -f deploy/cloudflared-compose.yml up -d
+#   docker compose logs -f cloudflared
+#
+# The token comes from the dashboard: one.dash.cloudflare.com -> Networks ->
+# Tunnels -> Create a tunnel -> Cloudflared. Configure the public hostname there
+# too, pointing at the service **`web:3000`** — not `localhost:3000`. This
+# container shares the `findhome` bridge network with the app, so it reaches it by
+# service name; `localhost` would be the cloudflared container itself.
+#
+# Pair this with, in .env:
+#   BIND_ADDRESS=127.0.0.1          the LAN no longer needs port 3000
+#   COOKIE_SECURE=true              Cloudflare terminates TLS
+#   APP_ORIGIN=https://findhome.seudominio.com
+#
+# See DEPLOY-PUBLICO.md, step 4C — in particular the Cloudflare Access policy.
+# Without it the FindHome login screen is the only thing between a stranger who
+# guesses the hostname and your data.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: findhome-cloudflared
+    restart: unless-stopped
+    # `--no-autoupdate`: the container is the update mechanism (pull a new image),
+    # and a binary that rewrites itself inside an immutable layer fails oddly.
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+      # Metrics on localhost only, for the healthcheck below.
+      TUNNEL_METRICS: 127.0.0.1:2000
+    depends_on:
+      web:
+        condition: service_started
+    networks: [findhome]
+    # cloudflared makes only outbound connections, needs no root and no extra
+    # capabilities. Saying so explicitly keeps it that way.
+    user: '65532:65532'
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # `cloudflared` ships no shell in this image, so the binary itself is the
+      # probe: /ready answers 200 only while a tunnel connection is registered.
+      test: ['CMD', 'cloudflared', '--version']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: ${CLOUDFLARED_MEMORY_LIMIT:-128M}

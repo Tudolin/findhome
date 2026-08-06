@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FindHome — pare de perder o apartamento bom numa aba aberta</title>
+    <meta
+      name="description"
+      content="O FindHome reúne ZAP, Viva Real, QuintoAndar, OLX, ImovelWeb e Chaves na Mão num único feed, com notas, prós e contras e um ranking que funciona para duas pessoas decidirem juntas."
+    />
+    <meta name="theme-color" content="#252b22" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+
+    <!-- Open Graph. A imagem é gerada por CSS na página, então o preview usa o
+         SVG estático abaixo em vez de um screenshot que ficaria desatualizado. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="FindHome — todos os portais, um feed, uma decisão" />
+    <meta
+      property="og:description"
+      content="Seis portais imobiliários num só lugar, com avaliação a dois e ranking de consenso."
+    />
+    <meta property="og:image" content="og-image.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+
+  <body>
+    <!-- Barra de progresso da rolagem: alimentada por --scroll no <html>. -->
+    <div class="scroll-progress" aria-hidden="true"><span></span></div>
+
+    <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+    <header class="nav" data-nav>
+      <div class="shell nav__inner">
+        <a class="brand" href="#top" aria-label="FindHome, início">
+          <span class="brand__mark" aria-hidden="true">FH</span>
+          <span class="brand__word">FindHome</span>
+        </a>
+
+        <nav class="nav__links" aria-label="Seções">
+          <a href="#problema">O problema</a>
+          <a href="#recursos">Recursos</a>
+          <a href="#como-funciona">Como funciona</a>
+          <a href="#planos">Planos</a>
+        </nav>
+
+        <a class="btn btn--primary btn--sm" href="#planos">Começar de graça</a>
+      </div>
+    </header>
+
+    <main id="conteudo">
+      <!-- ================================================================= -->
+      <!-- HERO                                                              -->
+      <!-- ================================================================= -->
+      <section class="hero" id="top">
+        <!-- Camadas de parallax. aria-hidden porque são pura decoração: um
+             leitor de tela não deve anunciar nenhuma delas. -->
+        <div class="hero__bg" aria-hidden="true">
+          <div class="mesh mesh--a" data-parallax="0.18"></div>
+          <div class="mesh mesh--b" data-parallax="0.32"></div>
+          <div class="mesh mesh--c" data-parallax="0.08"></div>
+          <div class="grid-lines" data-parallax="0.05"></div>
+        </div>
+
+        <div class="shell hero__inner">
+          <div class="hero__copy">
+            <p class="eyebrow" data-reveal>
+              <span class="eyebrow__dot" aria-hidden="true"></span>
+              Seis portais · um feed · uma decisão
+            </p>
+
+            <h1 class="hero__title" data-reveal data-reveal-delay="1">
+              Pare de perder<br />
+              o apartamento bom<br />
+              <span class="grad">numa aba aberta.</span>
+            </h1>
+
+            <p class="hero__lead" data-reveal data-reveal-delay="2">
+              O FindHome varre ZAP, Viva Real, QuintoAndar, OLX, ImovelWeb e Chaves na Mão,
+              junta tudo num feed só, e te dá o que nenhum portal dá: um lugar para
+              <strong>duas pessoas avaliarem juntas</strong> e um ranking que mostra onde vocês
+              concordam — e onde precisam conversar.
+            </p>
+
+            <div class="hero__actions" data-reveal data-reveal-delay="3">
+              <a class="btn btn--primary btn--lg" href="#planos">
+                Começar de graça
+                <span class="btn__hint">sem cartão</span>
+              </a>
+              <a class="btn btn--ghost btn--lg" href="#como-funciona">Ver como funciona</a>
+            </div>
+
+            <ul class="hero__proof" data-reveal data-reveal-delay="4">
+              <li><strong>6</strong> portais integrados</li>
+              <li><strong>0</strong> abas abertas</li>
+              <li><strong>2×</strong> por dia, automático</li>
+            </ul>
+          </div>
+
+          <!-- Mockup do app, desenhado em CSS. Um screenshot ficaria
+               desatualizado a cada mudança de UI; isto não. -->
+          <div class="hero__stage" data-reveal data-reveal-delay="2">
+            <div class="stage" data-tilt>
+              <div class="stage__glow" aria-hidden="true"></div>
+
+              <div class="app" role="img" aria-label="Prévia da tela de descobertas do FindHome, com dois apartamentos avaliados">
+                <div class="app__bar">
+                  <span class="app__dot"></span><span class="app__dot"></span><span class="app__dot"></span>
+                  <span class="app__url">findhome.local/dashboard</span>
+                </div>
+
+                <div class="app__body">
+                  <div class="app__toolbar">
+                    <span class="pill pill--on">Batel</span>
+                    <span class="pill pill--on">Água Verde</span>
+                    <span class="pill">Centro</span>
+                    <span class="pill pill--muted">≤ R$ 3.500</span>
+                  </div>
+
+                  <div class="app__grid">
+                    <article class="mini" data-float="0">
+                      <div class="mini__photo">
+                        <span class="mini__tag">QuintoAndar</span>
+                        <span class="mini__count">12 fotos</span>
+                      </div>
+                      <p class="mini__title">2 dorm. reformado, Batel</p>
+                      <p class="mini__price">R$ 3.180<span>/mês total</span></p>
+                      <div class="mini__stars" aria-hidden="true">★★★★<span>★</span></div>
+                      <div class="mini__chips">
+                        <span class="chip chip--pro">Perto do metrô</span>
+                        <span class="chip chip--con">Sem vaga</span>
+                      </div>
+                    </article>
+
+                    <article class="mini mini--score" data-float="1">
+                      <div class="mini__photo mini__photo--alt">
+                        <span class="mini__tag">Zap Imóveis</span>
+                        <span class="mini__count">18 fotos</span>
+                      </div>
+                      <p class="mini__title">3 dorm. com varanda, Água Verde</p>
+                      <p class="mini__price">R$ 3.420<span>/mês total</span></p>
+                      <div class="mini__stars" aria-hidden="true">★★★★★</div>
+                      <div class="mini__chips">
+                        <span class="chip chip--pro">Bem iluminado</span>
+                        <span class="chip chip--pro">Aceita pet</span>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Cartões flutuantes: os dois momentos que vendem o produto. -->
+              <div class="float float--score" data-float="2" aria-hidden="true">
+                <span class="float__label">Nota da party</span>
+                <span class="float__value">92</span>
+                <span class="float__meta">vocês dois concordam</span>
+              </div>
+
+              <div class="float float--alert" data-float="3" aria-hidden="true">
+                <span class="float__icon">🔔</span>
+                <span>
+                  <strong>3 imóveis novos</strong>
+                  <em>em Batel, agora</em>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero__fade" aria-hidden="true"></div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- PROBLEMA                                                          -->
+      <!-- ================================================================= -->
+      <section class="section section--problem" id="problema">
+        <div class="shell">
+          <header class="section__head" data-reveal>
+            <p class="eyebrow eyebrow--plain">Por que isso existe</p>
+            <h2 class="section__title">Procurar apartamento a dois é um problema de organização, não de busca.</h2>
+          </header>
+
+          <div class="problems">
+            <div class="problem" data-reveal data-reveal-delay="1">
+              <span class="problem__num" aria-hidden="true">01</span>
+              <h3>O mesmo imóvel em quatro portais</h3>
+              <p>
+                Cada portal com preço diferente, um mostrando o condomínio e o outro não. Você compara
+                aluguel com valor total sem perceber.
+              </p>
+            </div>
+
+            <div class="problem" data-reveal data-reveal-delay="2">
+              <span class="problem__num" aria-hidden="true">02</span>
+              <h3>O bom se perde no meio</h3>
+              <p>
+                O apartamento que você gostou na terça está trinta cards abaixo na sexta. Não existe
+                “já vi esse”, muito menos “já gostei desse”.
+              </p>
+            </div>
+
+            <div class="problem" data-reveal data-reveal-delay="3">
+              <span class="problem__num" aria-hidden="true">03</span>
+              <h3>A conversa vira print no WhatsApp</h3>
+              <p>
+                “O que você achou do da Rua X?” — e ninguém lembra qual era o da Rua X. As opiniões
+                ficam num chat, não do lado do imóvel.
+              </p>
+            </div>
+
+            <div class="problem" data-reveal data-reveal-delay="4">
+              <span class="problem__num" aria-hidden="true">04</span>
+              <h3>O melhor sai antes de você ver</h3>
+              <p>
+                Anúncio bom em bairro disputado dura horas. Quem olha duas vezes por dia perde; quem
+                é avisado, não.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- RECURSOS                                                          -->
+      <!-- ================================================================= -->
+      <section class="section" id="recursos">
+        <div class="shell">
+          <header class="section__head" data-reveal>
+            <p class="eyebrow eyebrow--plain">O que o FindHome faz</p>
+            <h2 class="section__title">Um feed, e tudo o que falta nos portais em volta dele.</h2>
+          </header>
+
+          <div class="features">
+            <article class="feature feature--wide" data-reveal>
+              <div class="feature__icon" aria-hidden="true">🗂️</div>
+              <h3>Seis portais, um feed, sem repetição</h3>
+              <p>
+                ZAP, Viva Real, QuintoAndar, OLX, ImovelWeb e Chaves na Mão. O mesmo imóvel anunciado
+                em três lugares aparece uma vez, e o preço é sempre <strong>aluguel + condomínio +
+                IPTU</strong> — o que sai da conta de verdade.
+              </p>
+              <div class="portals" aria-hidden="true">
+                <span>Zap Imóveis</span><span>Viva Real</span><span>QuintoAndar</span>
+                <span>OLX</span><span>ImovelWeb</span><span>Chaves na Mão</span>
+              </div>
+            </article>
+
+            <article class="feature" data-reveal data-reveal-delay="1">
+              <div class="feature__icon" aria-hidden="true">⭐</div>
+              <h3>Avaliação a dois, com ranking de consenso</h3>
+              <p>
+                Cada pessoa dá sua nota, seus prós e seus contras. O ranking premia
+                <em>concordância</em>: um 4 dos dois vale mais que um 5 de um só — e um veto pesa.
+              </p>
+            </article>
+
+            <article class="feature" data-reveal data-reveal-delay="2">
+              <div class="feature__icon" aria-hidden="true">🎯</div>
+              <h3>Filtros que combinam de verdade</h3>
+              <p>
+                Vários bairros ao mesmo tempo, faixa de preço e de área, dormitórios, vagas,
+                comodidades, pet — e ordenação por <strong>preço por m²</strong>, que é o número que
+                compara dois apartamentos.
+              </p>
+            </article>
+
+            <article class="feature" data-reveal data-reveal-delay="3">
+              <div class="feature__icon" aria-hidden="true">📸</div>
+              <h3>A galeria inteira, não só a capa</h3>
+              <p>
+                Metade dos portais entrega uma foto só na busca. O FindHome abre o anúncio e traz o
+                resto do álbum, no tamanho grande.
+              </p>
+            </article>
+
+            <article class="feature" data-reveal data-reveal-delay="4">
+              <div class="feature__icon" aria-hidden="true">🔔</div>
+              <h3>Aviso quando aparece, não quando você olha</h3>
+              <p>
+                Imóvel novo que combina com a busca vira mensagem no WhatsApp ou no Telegram. Nada é
+                avisado duas vezes.
+              </p>
+            </article>
+
+            <article class="feature" data-reveal data-reveal-delay="5">
+              <div class="feature__icon" aria-hidden="true">🗺️</div>
+              <h3>Mapa e agenda de visitas</h3>
+              <p>
+                Veja tudo no mapa antes de decidir o trajeto, marque a visita e assine a agenda no
+                Google ou Apple Calendar. Quem marca é um, quem recebe são os dois.
+              </p>
+            </article>
+
+            <article class="feature" data-reveal data-reveal-delay="6">
+              <div class="feature__icon" aria-hidden="true">🧭</div>
+              <h3>“Seus apartamentos”: nada se perde</h3>
+              <p>
+                Uma aba só com o que vocês já avaliaram, com filtro e ordenação próprios. O que você
+                decidiu para de se mover.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- COMO FUNCIONA                                                     -->
+      <!-- ================================================================= -->
+      <section class="section section--steps" id="como-funciona">
+        <div class="steps__bg" aria-hidden="true" data-parallax="0.12"></div>
+
+        <div class="shell">
+          <header class="section__head" data-reveal>
+            <p class="eyebrow eyebrow--plain">Como funciona</p>
+            <h2 class="section__title">Três passos, e depois é só decidir.</h2>
+          </header>
+
+          <ol class="steps">
+            <li class="step" data-reveal>
+              <span class="step__badge">1</span>
+              <div>
+                <h3>Diga o que vocês procuram</h3>
+                <p>
+                  Cidade, estado, bairros, orçamento, dormitórios, área mínima, pet. Numa party, o
+                  perfil é compartilhado — os dois veem e editam o mesmo filtro.
+                </p>
+              </div>
+            </li>
+
+            <li class="step" data-reveal data-reveal-delay="1">
+              <span class="step__badge">2</span>
+              <div>
+                <h3>O FindHome busca sozinho</h3>
+                <p>
+                  Duas vezes por dia, em todos os portais ativos. Imóvel que sai do ar some do feed;
+                  imóvel novo chega no topo — e no seu celular, se você quiser.
+                </p>
+              </div>
+            </li>
+
+            <li class="step" data-reveal data-reveal-delay="2">
+              <span class="step__badge">3</span>
+              <div>
+                <h3>Avaliem, e o ranking se monta</h3>
+                <p>
+                  Nota, prós, contras, comentários e um quadro por etapa: interessado → favorito →
+                  visita marcada → proposta. O consenso aparece sozinho.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- PLANOS                                                            -->
+      <!-- ================================================================= -->
+      <section class="section section--pricing" id="planos">
+        <div class="shell">
+          <header class="section__head" data-reveal>
+            <p class="eyebrow eyebrow--plain">Planos</p>
+            <h2 class="section__title">Comece de graça. Suba quando a busca ficar séria.</h2>
+            <p class="section__lead">
+              Sem cartão para começar, sem contrato, sem pegadinha. Cancele quando alugar.
+            </p>
+          </header>
+
+          <div class="plans">
+            <article class="plan" data-reveal>
+              <header class="plan__head">
+                <h3 class="plan__name">Free</h3>
+                <p class="plan__price"><span class="plan__amount">R$ 0</span><span class="plan__per">/mês</span></p>
+                <p class="plan__pitch">Para conhecer e achar os primeiros bons.</p>
+              </header>
+
+              <ul class="plan__list">
+                <li class="yes"><strong>2 portais</strong> à sua escolha</li>
+                <li class="yes"><strong>1 busca</strong> salva</li>
+                <li class="yes">Até <strong>50 imóveis</strong> no feed</li>
+                <li class="yes">Atualização <strong>1× por dia</strong></li>
+                <li class="yes">Notas, prós e contras</li>
+                <li class="yes">Até <strong>2 pessoas</strong> na party</li>
+                <li class="no">Alertas no WhatsApp / Telegram</li>
+                <li class="no">Mapa e agenda de visitas</li>
+                <li class="no">Galeria completa das fotos</li>
+                <li class="no">Histórico de preço</li>
+              </ul>
+
+              <a class="btn btn--ghost btn--block" href="#" data-cta="free">Criar conta grátis</a>
+              <p class="plan__foot">Nenhum cartão pedido.</p>
+            </article>
+
+            <article class="plan plan--featured" data-reveal data-reveal-delay="1">
+              <span class="plan__ribbon">Mais escolhido</span>
+              <header class="plan__head">
+                <h3 class="plan__name">Premium</h3>
+                <p class="plan__price">
+                  <span class="plan__amount">R$ 19</span><span class="plan__per">/mês</span>
+                </p>
+                <p class="plan__pitch">Ilimitado. Para quem está procurando agora.</p>
+              </header>
+
+              <ul class="plan__list">
+                <li class="yes"><strong>Todos os 6 portais</strong></li>
+                <li class="yes"><strong>Buscas ilimitadas</strong></li>
+                <li class="yes"><strong>Imóveis ilimitados</strong> no feed</li>
+                <li class="yes">Atualização <strong>a cada 3 horas</strong></li>
+                <li class="yes">Filtros avançados e preço por m²</li>
+                <li class="yes">Party de <strong>até 6 pessoas</strong></li>
+                <li class="yes"><strong>Alertas</strong> no WhatsApp e Telegram</li>
+                <li class="yes">Mapa, visitas e agenda sincronizada</li>
+                <li class="yes"><strong>Galeria completa</strong> em alta resolução</li>
+                <li class="yes">Histórico de preço e exportação</li>
+              </ul>
+
+              <a class="btn btn--primary btn--block" href="#" data-cta="premium">Assinar o Premium</a>
+              <p class="plan__foot">7 dias grátis · cancele em um clique.</p>
+            </article>
+          </div>
+
+          <p class="plans__note" data-reveal>
+            Precisa hospedar no seu próprio servidor, com os dados só na sua casa?
+            O FindHome é <strong>open source</strong> — essa versão é gratuita e ilimitada para sempre.
+          </p>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- FAQ                                                               -->
+      <!-- ================================================================= -->
+      <section class="section section--faq">
+        <div class="shell shell--narrow">
+          <header class="section__head" data-reveal>
+            <p class="eyebrow eyebrow--plain">Dúvidas</p>
+            <h2 class="section__title">O que perguntam antes de assinar.</h2>
+          </header>
+
+          <div class="faq" data-reveal>
+            <details>
+              <summary>De onde vêm os imóveis?</summary>
+              <p>
+                Dos próprios portais: ZAP, Viva Real, QuintoAndar, OLX, ImovelWeb e Chaves na Mão. O
+                FindHome não é imobiliária e não intermedeia nada — o contato é sempre com quem
+                anunciou, no anúncio original, que fica a um clique de distância em todo card.
+              </p>
+            </details>
+
+            <details>
+              <summary>O preço mostrado é o final?</summary>
+              <p>
+                O FindHome sempre mostra <strong>aluguel + condomínio + IPTU</strong> quando o portal
+                informa esses valores, com a composição aberta ao lado. Quando um portal não publica o
+                condomínio, isso fica dito no imóvel em vez de virar um total otimista.
+              </p>
+            </details>
+
+            <details>
+              <summary>Como funciona a avaliação a dois?</summary>
+              <p>
+                Vocês criam uma <em>party</em> com um código de convite. As preferências passam a ser
+                compartilhadas, e cada pessoa mantém a sua própria nota, seus prós e seus contras em
+                cada imóvel. O ranking combina média, quantas pessoas opinaram, o quanto concordam e
+                quão longe o imóvel chegou no processo.
+              </p>
+            </details>
+
+            <details>
+              <summary>Posso trocar de plano ou cancelar?</summary>
+              <p>
+                A qualquer momento, sem falar com ninguém. Ao cancelar o Premium, sua conta volta para
+                o Free e nada é apagado — suas notas, prós, contras e visitas continuam lá.
+              </p>
+            </details>
+
+            <details>
+              <summary>Vocês vendem meus dados?</summary>
+              <p>
+                Não. Sem anúncio, sem revenda de lead, sem repassar seu contato para imobiliária. O
+                plano pago é a receita — é por isso que ele existe.
+              </p>
+            </details>
+
+            <details>
+              <summary>E se eu quiser rodar na minha própria máquina?</summary>
+              <p>
+                Pode. O FindHome é open source e roda com um <code>docker compose up</code> em
+                qualquer Linux — ou no Windows via WSL2. Nessa forma é gratuito e sem limite nenhum;
+                você é quem opera, atualiza e faz backup.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- CTA FINAL                                                         -->
+      <!-- ================================================================= -->
+      <section class="cta">
+        <div class="cta__bg" aria-hidden="true" data-parallax="0.16"></div>
+        <div class="shell shell--narrow cta__inner" data-reveal>
+          <h2>O próximo apartamento bom vai aparecer hoje.</h2>
+          <p>Você vai estar olhando, ou vai ser avisado?</p>
+          <div class="cta__actions">
+            <a class="btn btn--primary btn--lg" href="#" data-cta="free">Começar de graça</a>
+            <a class="btn btn--ghost btn--lg" href="#planos">Comparar os planos</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell footer__inner">
+        <div class="footer__brand">
+          <span class="brand__mark" aria-hidden="true">FH</span>
+          <div>
+            <p class="footer__name">FindHome</p>
+            <p class="footer__tag">Todos os portais, um feed, uma decisão.</p>
+          </div>
+        </div>
+
+        <nav class="footer__links" aria-label="Rodapé">
+          <a href="#recursos">Recursos</a>
+          <a href="#planos">Planos</a>
+          <a href="#como-funciona">Como funciona</a>
+        </nav>
+
+        <p class="footer__legal">
+          Página de demonstração (MVP). O FindHome agrega anúncios públicos de portais de terceiros e
+          não intermedeia locação. Marcas citadas pertencem aos seus donos.
+        </p>
+      </div>
+    </footer>
+
+    <script src="main.js" defer></script>
+  </body>
+</html>

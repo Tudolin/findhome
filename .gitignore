@@ -9,3 +9,5 @@ backups/*
 .DS_Store
 next-env.d.ts
 .tsbuildinfo
+# Vercel CLI state for landing/ — contains the project/org id, not needed in Git.
+.vercel/

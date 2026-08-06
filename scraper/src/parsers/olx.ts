@@ -62,7 +62,15 @@ type Card = {
   details: string[];
   /** Extra price lines, e.g. ["Condomínio R$ 500", "IPTU R$ 90"]. */
   priceInfo: string[];
-  image: string;
+  /**
+   * Every photo URL the card carries, in DOM order.
+   *
+   * Usually one: OLX renders the cover and nothing else on a results page. It is
+   * a list anyway because some cards ship a small `srcset`, and taking `[0]` threw
+   * that away for no reason. The rest of the gallery only exists on the ad's own
+   * page and is filled in by the backfill pass — see scraper/src/photos.ts.
+   */
+  images: string[];
 };
 
 /** Runs in the page. Returns plain data so all parsing stays in typed Node code. */
@@ -94,6 +102,24 @@ function readCards(): Card[] {
 
     const link = card.querySelector('a[data-testid="adcard-link"]') ?? card.querySelector('a[href]');
 
+    // `src` is what renders; `data-src` is where a lazy loader parks the real URL
+    // before it swaps it in; `srcset` occasionally lists two sizes. Reading only
+    // `src` returned "" for any card that had not scrolled into view yet.
+    const images: string[] = [];
+    for (const img of all('img')) {
+      for (const attr of ['src', 'data-src', 'data-lazy-src']) {
+        const value = img.getAttribute(attr);
+        if (value) images.push(value);
+      }
+      const srcset = img.getAttribute('srcset');
+      if (srcset) {
+        for (const entry of srcset.split(',')) {
+          const url = entry.trim().split(/\s+/)[0];
+          if (url) images.push(url);
+        }
+      }
+    }
+
     out.push({
       href: link?.getAttribute('href') ?? '',
       title: text('.olx-adcard__title') || link?.getAttribute('title') || '',
@@ -103,7 +129,7 @@ function readCards(): Card[] {
         (d) => d.getAttribute('aria-label') ?? d.textContent?.trim() ?? '',
       ),
       priceInfo: all('.olx-adcard__price-info-list *').map((e) => e.textContent?.trim() ?? ''),
-      image: card.querySelector('img')?.getAttribute('src') ?? '',
+      images,
     });
   }
 
@@ -213,7 +239,14 @@ export function mapCard(card: Card, target: SearchTarget): RawListing | null {
     bathrooms: spec(card.details, /banheiro/i),
     parkingSpots: spec(card.details, /vaga|garagem/i),
     sqm: spec(card.details, /metros quadrados|m²/i),
-    images: unique([upgradeImage(clean(card.image, 500))].filter(Boolean)),
+    // The card's logo and OLX's own artwork share the <img> namespace with the
+    // photo, so only URLs from the ad image CDN are kept.
+    images: unique(
+      card.images
+        .map((src) => clean(src, 500))
+        .filter((src) => /^https?:/.test(src) && /(olx|olxbr)\b/i.test(src) && !/logo|sprite|icon/i.test(src))
+        .map(upgradeImage),
+    ).slice(0, 12),
     amenities: [],
     petFriendly: detectPetPolicy(title),
     listingType: target.listingType,

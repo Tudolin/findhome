@@ -17,20 +17,31 @@ API keys.
 2. [Quick start (automated)](#quick-start-automated)
 3. [Quick start (manual)](#quick-start-manual)
 4. [Exposing it on your LAN](#exposing-it-on-your-lan)
-5. [Reverse proxy](#reverse-proxy)
-6. [The scraping engine](#the-scraping-engine)
-7. [Appearance and language](#appearance-and-language)
-8. [Pins and WhatsApp alerts](#pins-and-whatsapp-alerts)
-9. [Map](#map)
-10. [Visits and calendar sync](#visits-and-calendar-sync)
-11. [Location standardisation](#location-standardisation)
-12. [Database, migrations and seeds](#database-migrations-and-seeds)
-13. [Backup and restore](#backup-and-restore)
-14. [Everyday commands](#everyday-commands)
-15. [Architecture](#architecture)
-16. [Configuration reference](#configuration-reference)
-17. [Troubleshooting](#troubleshooting)
-18. [Security notes](#security-notes)
+5. [Tailscale](#tailscale)
+6. [Reverse proxy](#reverse-proxy)
+7. [The scraping engine](#the-scraping-engine)
+8. [Appearance and language](#appearance-and-language)
+9. [Pins and WhatsApp alerts](#pins-and-whatsapp-alerts)
+10. [Map](#map)
+11. [Visits and calendar sync](#visits-and-calendar-sync)
+12. [Location standardisation](#location-standardisation)
+13. [Database, migrations and seeds](#database-migrations-and-seeds)
+14. [Backup and restore](#backup-and-restore)
+15. [Everyday commands](#everyday-commands)
+16. [Architecture](#architecture)
+17. [Configuration reference](#configuration-reference)
+18. [Troubleshooting](#troubleshooting)
+19. [Security notes](#security-notes)
+20. [Putting it on the internet](#putting-it-on-the-internet)
+
+> **Publishing it from a laptop, with HTTPS and a free hostname:** there is a
+> separate step-by-step guide in Portuguese — **[DEPLOY-PUBLICO.md](DEPLOY-PUBLICO.md)**.
+> It covers Tailscale, Tailscale Funnel and Cloudflare Tunnel, plus the hardening
+> that has to happen first. The section [Putting it on the
+> internet](#putting-it-on-the-internet) below is the shorter, conceptual version.
+
+> **Marketing page:** [`landing/`](landing/) is a self-contained static site for
+> Vercel, independent of the app. See [`landing/README.md`](landing/README.md).
 
 ---
 
@@ -53,6 +64,53 @@ tinted background. See [Design system](#design-system--neumorphic-pistachio).
 You switch between workspaces from the top bar. The two never mix: every API
 call resolves the active workspace and checks membership before it reads or
 writes anything.
+
+### The two feeds
+
+**Discovery** (`/dashboard`) is the firehose: everything the portals published
+that matches the saved preferences, newest first.
+
+**Your homes** (`/my-homes`) is the other half — only what this workspace has
+actually reacted to, with its own tabs (all reviewed · favorites · interested ·
+visits · applied · archived · rated), a headline strip (how many reviewed, average
+rating, pinned, upcoming visits, cheapest, average price), and sorting by *your*
+judgement rather than by what a portal posted most recently.
+
+Two deliberate differences from Discovery:
+
+- **The saved preferences do not apply.** A flat you shortlisted must not vanish
+  because you later raised your minimum area. Things you have decided about stop
+  moving.
+- **The default sort is "recently reviewed"**, not "newest listing".
+
+### Filtering
+
+The toolbar on both feeds narrows *on top of* the saved preferences — never past
+them, so a party's agreed profile stays meaningful. It can only ever reduce the
+result set.
+
+| Filter | Notes |
+|---|---|
+| Free text | title, street, neighborhood **and** description |
+| Neighborhoods | **multi-select**, with counts; searchable past 12 options |
+| Portals | multi-select, with counts |
+| Price | from / to, checked against whichever price the profile treats as the budget |
+| Area | from / to |
+| Bedrooms | from / to · Bathrooms and parking: minimum |
+| Amenities | multi-select; a listing must have **every** one picked |
+| Pets | pet-friendly (or unstated) / not pet-friendly / any |
+| With photos | drops listings whose portal gave us nothing |
+| Found within | last 24h / 3 / 7 / 14 / 30 days |
+| Your rating | minimum stars |
+| Pinned only, Ignore preferences | toggles |
+
+Sorts: newest, oldest, cheapest, most expensive, largest, smallest, **best price
+per m²**, best match (party score), your rating, recently reviewed.
+
+Every filter lives in the URL, so a search is shareable and back-button-correct.
+The toolbar is a plain GET form and the pagination is plain anchors — both on
+purpose, see the long comments in `web/src/components/FeedControls.tsx` and
+`web/src/components/Pagination.tsx`.
 
 ---
 
@@ -166,6 +224,72 @@ sudo ufw allow from 192.168.0.0/16 to any port 3000 proto tcp
 
 **Only the `web` service publishes a port.** Postgres and the scraper stay on
 the private `findhome` bridge network and are not reachable from the LAN.
+
+---
+
+## Tailscale
+
+If the host is already on a tailnet, **FindHome is reachable over it with no
+changes**: compose publishes the web port on `0.0.0.0`, which includes the
+`tailscale0` interface. From any device in the tailnet:
+
+```
+http://<machine>:3000              # MagicDNS
+http://100.x.y.z:3000              # tailscale ip -4
+```
+
+Nothing in the app is tied to a hostname — there are no Server Actions (so no
+`allowedOrigins` to configure), no Host or Origin validation, and the session
+cookie is host-scoped, so a new name just works.
+
+### Recommended: `tailscale serve`, for HTTPS
+
+```bash
+# once, in the admin console: DNS -> HTTPS Certificates -> enable
+tailscale serve --bg 3000
+tailscale serve status
+```
+
+That publishes `https://<machine>.<tailnet>.ts.net/` with a real certificate.
+Worth doing, because HTTPS is what lets you tighten two things:
+
+```bash
+COOKIE_SECURE=true                                   # safe only with TLS
+APP_ORIGIN=https://<machine>.<tailnet>.ts.net        # correct absolute links
+BIND_ADDRESS=127.0.0.1                               # stop publishing to the LAN
+```
+
+`BIND_ADDRESS=127.0.0.1` is the point of the exercise: `tailscale serve` proxies
+from the host itself, so the container no longer needs to listen on the LAN at
+all. Then `docker compose up -d`.
+
+### ⚠️ The calendar subscription will not work over Tailscale
+
+Apple Calendar and Google Calendar fetch a subscription URL **from their own
+servers**, which are not on your tailnet. A `https://…ts.net/api/calendar/…`
+feed is unreachable to them and the subscription silently never updates.
+
+Still fine, because they run in your browser: **Download .ics** and **Add to
+Google Calendar**. Only the auto-syncing subscription needs a publicly reachable
+URL.
+
+WhatsApp/Telegram alerts are unaffected — those are outbound from the scraper.
+
+### Do not use Tailscale Funnel for this
+
+Funnel exposes the service to the public internet, and pointing it at the whole
+app skips every control you would otherwise put in front of it. If you do need
+public access — which is also the only way to make the calendar subscription
+work — see [Putting it on the internet](#putting-it-on-the-internet); the short
+version is to publish *only* the calendar route, which Funnel can do with
+`--set-path`.
+
+### Giving FindHome its own tailnet identity
+
+The above shares the host's identity. To make the app a separate device
+(`findhome.<tailnet>.ts.net`, its own ACL target), run a `tailscale/tailscale`
+sidecar with `network_mode: service:tailscale` on the web service and an auth
+key. More moving parts, and only worth it if you want per-service ACLs.
 
 ---
 
@@ -298,6 +422,60 @@ The distinctions it draws are the useful part:
    A failing source never aborts the others. A source that completes but returns
    **zero** listings is recorded with a note and shown as a warning in the app —
    "200 OK, nothing found" is the failure that hides best.
+7. **Photo galleries** are filled in, while Chromium is still up. See below.
+8. **Coordinates** and then **alerts**, both after the catalogue is written and
+   neither ever allowed to fail the run.
+
+### Photo galleries
+
+Only half the portals put the whole gallery in their search response:
+
+| Source | Photos in the search response |
+|---|---|
+| `ZAP`, `VIVA_REAL` | every photo (`listing.images[]`) |
+| `QUINTO_ANDAR` | every photo (`coverImage` + `imageList`) |
+| `OLX` | **the cover, only** |
+| `CHAVES_NA_MAO` | **the cover, only** (schema.org `item.image`) |
+| `IMOVELWEB` | **the cover** — the card carousel is lazy-loaded and never renders on a results page |
+
+That is not a parser bug; those portals genuinely do not publish the gallery
+there. It only exists on the listing's own page, which is one navigation per
+listing and therefore cannot happen inline with the search. So there is a second
+pass (`scraper/src/photos.ts`), shaped like the geocoder: bounded per run, stamped
+so nothing is retried forever, and never allowed to fail the scrape.
+
+It tries four strategies on each page and merges all of them — schema.org
+`ImageObject`, the hydration payload, `og:image`, then the DOM (`src`, `data-src`,
+`srcset`, `<link rel=preload as=image>`) — filters out logos, sprites and tracking
+pixels via an allowlist of the portals' image hosts, and applies the same size
+upgrades the parsers use. **No image is ever downloaded**: `BrowserPool` aborts
+every image request, so the pass reads URLs, not bytes.
+
+```bash
+make photos            # work through the backlog now
+make photos N=400      # bigger catch-up pass, e.g. right after upgrading
+make doctor            # prints photos-per-listing per source, and why
+```
+
+```ini
+PHOTOS_ENABLED=true        # the pass reuses the scrape's Chromium, so it is on by default
+PHOTOS_MAX_PER_RUN=60      # one page load each — this is the budget
+PHOTOS_MIN_IMAGES=3        # listings at or above this are left alone
+PHOTOS_DELAY_MS=1200
+PHOTOS_TIMEOUT_MS=30000
+```
+
+Two columns keep the books: `photos_fetched_at` (null = never asked) and
+`photo_count` (0 after a fetch = asked, found nothing). The distinction is what
+stops a listing that genuinely has one photo from being re-opened every run.
+
+> **The subtle part:** re-scraping must not undo this. A plain `update` would
+> write the search result's single cover photo over a backfilled gallery, and
+> since the stamp is already set it would never be refetched — the carousels would
+> quietly collapse back to one photo hours after being filled. `photoUpdate()` in
+> `scraper/src/persist.ts` is the one place that decides this: a smaller incoming
+> set never replaces a larger stored one, genuinely new photos are unioned in and
+> clear the stamp, and an unchanged set touches nothing.
 
 ### Triggering a run by hand
 
@@ -668,6 +846,7 @@ make scrape        run the scraper now and wait for it
 make scrape-now    run the scraper now in the background
 make scrape-status last run's outcome per source
 make doctor        probe every portal and report what is broken and why
+make photos        fetch galleries for listings stored with only a cover photo
 make seed          load demo data
 make backup        dump the database
 make psql          open a SQL prompt
@@ -728,6 +907,7 @@ findhome/
 ├── .env.example             every knob, documented
 ├── setup.sh                 automated bootstrap
 ├── Makefile                 day-to-day operations
+├── DEPLOY-PUBLICO.md        step-by-step public exposure (pt-BR)
 ├── prisma/
 │   ├── schema.prisma        shared by web + scraper
 │   └── migrations/          committed SQL, applied with `migrate deploy`
@@ -737,17 +917,22 @@ findhome/
 │   └── src/
 │       ├── app/
 │       │   ├── (auth)/      /login, /register
-│       │   ├── (app)/       /dashboard, /preferences, /co-op, /property/[id]
+│       │   ├── (app)/       /dashboard, /my-homes, /map, /visits,
+│       │   │                /co-op, /preferences, /property/[id]
 │       │   └── api/         REST handlers
 │       │   ├── globals.css  neumorphic component classes
 │       │   ├── error.tsx / not-found.tsx / loading.tsx
 │       │   └── icon.svg     favicon
 │       ├── components/
+│       │   ├── FeedControls.tsx  the filter toolbar (a GET form, on purpose)
+│       │   ├── Pagination.tsx    plain anchors, on purpose
+│       │   └── StatusTabs.tsx    the "Your homes" bucket strip
 │       ├── lib/
-│       │   ├── workspace.ts single enforcement point for Solo/Party isolation
-│       │   ├── scoring.ts   the party ranking engine
-│       │   ├── matching.ts  preferences → SQL filter
-│       │   └── queries.ts   shared reads for pages and API
+│       │   ├── workspace.ts   single enforcement point for Solo/Party isolation
+│       │   ├── scoring.ts     the party ranking engine
+│       │   ├── matching.ts    preferences → SQL filter
+│       │   ├── feed-params.ts URL ↔ filters, in one place
+│       │   └── queries.ts     shared reads for pages and API
 │       └── middleware.ts    coarse route guard (Edge)
 ├── scraper/
 │   ├── Dockerfile
@@ -755,11 +940,15 @@ findhome/
 │       ├── index.ts         cron scheduler
 │       ├── runner.ts        one full pass, per-source error isolation
 │       ├── targets.ts       preferences → search targets
-│       ├── persist.ts       normalisation + de-duplication
+│       ├── persist.ts       normalisation, de-duplication, gallery protection
+│       ├── photos.ts        gallery backfill from listing pages
+│       ├── geocode.ts       coordinates for the portals that publish none
 │       └── parsers/         one module per portal
+├── landing/                 static marketing page for Vercel (independent)
 └── deploy/
     ├── nginx-findhome.conf
     ├── traefik-labels.yml
+    ├── cloudflared-compose.yml   Cloudflare Tunnel overlay
     └── backup.sh
 ```
 
@@ -864,6 +1053,11 @@ Everything is set in `.env`. Full annotated list in
 | `QUINTOANDAR_ENDPOINT` | *(built-in)* | Same |
 | `WHATSAPP_PROVIDER` | *(empty)* | `webhook` / `cloud` / `callmebot`. Empty disables alerts |
 | `ALERT_MAX_AGE_HOURS` | `48` | Older listings are marked seen rather than announced |
+| `PHOTOS_ENABLED` | `true` | Open listing pages to collect the rest of the gallery |
+| `PHOTOS_MAX_PER_RUN` | `60` | One page load each; this is the budget per run |
+| `PHOTOS_MIN_IMAGES` | `3` | Listings at or above this are left alone |
+| `PHOTOS_DELAY_MS` | `1200` | Politeness delay between listing pages |
+| `PHOTOS_TIMEOUT_MS` | `30000` | Navigation timeout per listing page |
 | `GEOCODE_ENABLED` | `false` | Resolve missing coordinates for the map |
 | `GEOCODE_CONTACT` | *(empty)* | Email in the User-Agent. Required by Nominatim's policy |
 | `GEOCODE_MAX_PER_RUN` | `25` | Keeps within the 1 req/s policy over time |
@@ -944,8 +1138,40 @@ SELECT DISTINCT city, city_slug, state FROM properties;
 ```
 The `city_slug` values must match exactly. Re-saving Preferences recomputes them.
 
+**Carousels show one photo.**
+Expected on `OLX`, `CHAVES_NA_MAO` and `IMOVELWEB` until the backfill pass has
+reached that listing — those portals publish only the cover in their search
+response. Check where it stands:
+```sql
+-- make psql
+SELECT source,
+       count(*)                                        AS listings,
+       count(*) FILTER (WHERE photos_fetched_at IS NULL) AS never_tried,
+       round(avg(photo_count), 1)                      AS avg_photos
+FROM properties WHERE active GROUP BY source ORDER BY source;
+```
+`never_tried > 0` just means the queue has not got there yet — run `make photos
+N=400`. If `never_tried = 0` and `avg_photos` is still ~1 for one source, the
+gallery moved: `make doctor` prints photos-per-listing per source, and opening one
+of that source's `source_url` by hand shows what changed. `PHOTOS_ENABLED=false`
+turns the pass off entirely.
+
+**Pagination does nothing / "Next" reloads the same page.**
+Fixed — the links are plain `<a>` now rather than `next/link`, because the client
+router intermittently declined those navigations (the same problem documented at
+the top of `web/src/components/FeedControls.tsx`). If it still misbehaves, the
+usual cause is a stale build: `make rebuild`.
+
+Separately, sorting by **best match**, **price per m²**, **your rating** or
+**recently reviewed** ranks in memory over the newest 2,000 matches, because those
+values are derived rather than stored. The page counter reflects what is actually
+reachable and says so under the pagination — it does not offer pages that would
+render empty.
+
 **Chromium crashes / `Target closed`.**
-Raise `SCRAPER_SHM_SIZE` to `1gb` and `SCRAPER_MEMORY_LIMIT` to `1.5G`.
+Raise `SCRAPER_SHM_SIZE` to `1gb` and `SCRAPER_MEMORY_LIMIT` to `1.5G`. The photo
+backfill runs inside the same browser, so if crashes started after upgrading, try
+`PHOTOS_MAX_PER_RUN=20` before raising limits.
 
 **Port 3000 is taken.**
 Change `WEB_PORT` in `.env`, then `docker compose up -d`.
@@ -965,14 +1191,137 @@ docker compose down -v && docker compose up -d --build
 
 ## Security notes
 
+### What the app does on its own
+
+| | |
+|---|---|
+| Passwords | bcrypt, cost 10 |
+| Sessions | HS256 JWT (`jose`), issuer checked, `JWT_SECRET` refused under 32 chars |
+| Cookie | `httpOnly`, `SameSite=Lax` (which is what blocks cross-site CSRF), `Secure` when `COOKIE_SECURE=true` |
+| Login | No user enumeration — same message and comparable work whether the email exists |
+| Login throttle | 10 attempts per account / 15 min, 40 per IP, 400 global. Returns 429 + `Retry-After` |
+| Registration | Off with `ALLOW_REGISTRATION=false`; 5 per IP / hour while on |
+| Authorisation | Every API handler re-resolves the workspace and checks membership; Solo Mode also matches on user id, because all solo rows share one `scopeKey` |
+| Headers | CSP, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, COOP, Permissions-Policy |
+| Exposure | Only `web` publishes a port. Postgres and the scraper stay on the private bridge |
+
+The throttle is in-memory, so it resets on container restart and would be
+per-replica if you ever scaled `web`. That is a deliberate trade-off for a
+single-container app — but it means the limiter is a backstop, not the perimeter.
+
+### Known gaps, stated plainly
+
+- **`script-src` includes `'unsafe-inline'`.** The theme is applied by an inline
+  script before first paint; converting it to a nonce is the fix. Until then the
+  CSP is defence-in-depth, not XSS-proof.
+- **Sessions cannot be revoked.** The JWT is stateless and lives for
+  `SESSION_TTL_DAYS` (default 30). There is no "sign out other devices", and a
+  stolen token is valid until it expires. Lower the TTL if the app is exposed.
+- **No 2FA, no account lockout beyond the throttle, no audit log.**
+- **The calendar feed URL is a bearer token.** Read-only and rotatable, but
+  whoever holds it can read that user's viewing schedule.
+- **No HSTS from the app** — that belongs on whatever terminates your TLS.
+
+---
+
+## Putting it on the internet
+
+Ranked by how much can go wrong.
+
+### 1. Best: publish only the calendar feed
+
+Almost always, the *only* thing that needs to be publicly reachable is the
+iCalendar feed, because Apple and Google poll it from their own servers. It is a
+single `GET`, read-only, guarded by a 256-bit token, and it touches no session.
+
+Everything else stays on Tailscale. With nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name findhome.example.com;
+    # …certs…
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # The feed, and nothing else.
+    location ~ ^/api/calendar/[A-Za-z0-9_-]+\.ics$ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / { return 404; }
+}
+```
+
+The attack surface is one read-only route. This is the option to take.
+
+### 2. Acceptable: an identity proxy in front
+
+If you want the whole app reachable, do not let the internet talk to its login
+form. Put an authenticating proxy in front — Cloudflare Tunnel + Access (free
+tier, no open ports), Authelia, Pomerium, oauth2-proxy — so an unauthenticated
+request never reaches the app at all. FindHome's own login then becomes a second
+factor rather than the perimeter.
+
+With this, the gaps above stop being internet-facing problems.
+
+### 3. Last resort: fully public, hardened
+
+If it is going to face the internet directly, all of this, not some of it:
+
+```bash
+COOKIE_SECURE=true            # and real TLS in front
+ALLOW_REGISTRATION=false      # after your accounts exist
+SESSION_TTL_DAYS=7            # smaller blast radius, no revocation exists
+BIND_ADDRESS=127.0.0.1        # only the proxy may reach the container
+APP_ORIGIN=https://your.domain
+```
+
+And at the proxy, because the app's in-memory limiter is not a perimeter:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=login:10m rate=6r/m;
+
+location /api/auth/ {
+    limit_req zone=login burst=4 nodelay;
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header X-Forwarded-For $remote_addr;   # the throttle reads this
+}
+```
+
+Plus: HSTS at the proxy, fail2ban or CrowdSec on repeated 401s, unattended
+security upgrades, and working restore-tested backups.
+
+> `X-Forwarded-For` is only trustworthy when a proxy you control sets it. Anyone
+> can send the header directly, which is why the per-IP budgets are loose and the
+> per-account one is what actually bounds an attack.
+
+### Do not
+
+- **Tailscale Funnel or a bare port-forward for the whole app.** Funnel is fine
+  for the calendar path (option 1); pointing it at the app skips every control
+  above.
+- **Leave `ALLOW_REGISTRATION=true` on a public deployment.** Anyone who finds
+  the URL gets an account.
+
+---
+
+## Hardening checklist
+
 This is built for a **private LAN**. Before putting it on the public internet:
 
 - Set `ALLOW_REGISTRATION=false` after creating your accounts. Otherwise anyone
   who reaches the app can sign up.
 - Terminate TLS at a reverse proxy and set `COOKIE_SECURE=true`.
 - Use a long random `JWT_SECRET` (`setup.sh` generates a 64-char one).
-- There is **no rate limiting** on the login endpoint. Add it at the proxy
-  (`limit_req` in Nginx) if the app is internet-facing.
+- The login throttle in the app is a backstop, not a perimeter: it is in-memory,
+  so it resets on restart. Add `limit_req` at the proxy as well if the app is
+  internet-facing.
+- Lower `SESSION_TTL_DAYS` from 30. Sessions are stateless JWTs and cannot be
+  revoked, so the TTL *is* the blast radius of a stolen cookie.
 - `.env` holds your database password and JWT secret — `setup.sh` sets mode
   `600`; keep it out of version control (it's in `.gitignore`).
 - Postgres is not published to the host by default. Keep it that way unless you

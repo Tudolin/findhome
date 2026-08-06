@@ -143,6 +143,15 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       ALERT_MAX_AGE_HOURS: ${ALERT_MAX_AGE_HOURS:-48}
+      # Gallery backfill. OLX, Chaves na Mão and ImovelWeb publish one photo in
+      # their search results; the rest of the gallery only exists on the listing's
+      # own page, so a second pass opens it. On by default — it reuses the
+      # Chromium the scrape already launched — and bounded per run.
+      PHOTOS_ENABLED: ${PHOTOS_ENABLED:-true}
+      PHOTOS_MAX_PER_RUN: ${PHOTOS_MAX_PER_RUN:-60}
+      PHOTOS_MIN_IMAGES: ${PHOTOS_MIN_IMAGES:-3}
+      PHOTOS_DELAY_MS: ${PHOTOS_DELAY_MS:-1200}
+      PHOTOS_TIMEOUT_MS: ${PHOTOS_TIMEOUT_MS:-30000}
       # Coordinates for the map, for the portals that publish none. Off by
       # default because Nominatim is donated infrastructure — see src/geocode.ts.
       GEOCODE_ENABLED: ${GEOCODE_ENABLED:-false}
