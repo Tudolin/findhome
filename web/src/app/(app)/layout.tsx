@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import TopBar from '@/components/TopBar';
+import AppShell from '@/components/AppShell';
 import { listWorkspaces, resolveWorkspace } from '@/lib/workspace';
 import { getSession } from '@/lib/auth';
 import { isTheme, THEME_COOKIE, type Theme } from '@/lib/theme';
@@ -20,15 +20,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const stored = store.get(THEME_COOKIE)?.value;
   const theme: Theme = isTheme(stored) ? stored : 'system';
 
+  // The shell wraps the content rather than sitting above it: the left padding
+  // has to follow the rail's collapsed state, and that is client state.
   return (
-    <div className="min-h-screen">
-      <TopBar
-        user={{ name: session.name, email: session.email }}
-        workspaces={workspaces}
-        activeId={active.partyId ?? 'solo'}
-        theme={theme}
-      />
-      <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
-    </div>
+    <AppShell
+      user={{ name: session.name, email: session.email }}
+      workspaces={workspaces}
+      activeId={active.partyId ?? 'solo'}
+      theme={theme}
+    >
+      {children}
+    </AppShell>
   );
 }

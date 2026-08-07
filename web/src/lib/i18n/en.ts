@@ -24,8 +24,13 @@ export const en = {
     workspaces: 'Workspaces',
     soloMode: 'Solo mode',
     party: (members: number) => `Party · ${members} members`,
-    createOrJoin: '+ Create or join a party',
+    createOrJoin: 'Create or join a party',
     personalSearch: 'Personal Search',
+    menu: 'Menu',
+    openMenu: 'Open the menu',
+    more: 'More',
+    collapse: 'Collapse the sidebar',
+    expand: 'Expand the sidebar',
   },
 
   theme: {

@@ -20,7 +20,30 @@ import { useLocale, useT } from './LocaleProvider';
  * broken. The language does need the round trip, because the strings are chosen
  * during server render.
  */
-export default function AppearanceMenu({ theme }: { theme: Theme }) {
+export default function AppearanceMenu({
+  theme,
+  /**
+   * Which way the menu opens.
+   *
+   * `up` is what the sidebar needs: the trigger sits at the bottom of the
+   * viewport, and a downward panel would render below the fold with no way to
+   * reach the language options.
+   */
+  placement = 'down',
+  /**
+   * Which edge the panel is anchored to.
+   *
+   * `right` (the default) grows leftward, which is right for a trigger on the
+   * right of the screen. In a **collapsed** sidebar — 76px wide, at x=0 — that
+   * puts a 208px panel almost entirely off the left edge, so the rail passes
+   * `left` and it grows into the content instead.
+   */
+  align = 'right',
+}: {
+  theme: Theme;
+  placement?: 'up' | 'down';
+  align?: 'left' | 'right';
+}) {
   const t = useT();
   const locale = useLocale();
   const router = useRouter();
@@ -81,7 +104,13 @@ export default function AppearanceMenu({ theme }: { theme: Theme }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 w-52 rounded-2xl bg-surface p-2 shadow-neu-lg">
+          <div
+            className={clsx(
+              'absolute z-20 w-52 rounded-2xl bg-surface p-2 shadow-neu-lg',
+              placement === 'up' ? 'bottom-full mb-2' : 'mt-2',
+              align === 'left' ? 'left-0' : 'right-0',
+            )}
+          >
             <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-500">{t.theme.label}</p>
             <div className="space-y-1">
               {THEMES.map((option) => (

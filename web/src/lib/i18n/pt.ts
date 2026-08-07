@@ -23,8 +23,13 @@ export const pt: Dict = {
     workspaces: 'Espaços',
     soloMode: 'Modo individual',
     party: (members: number) => `Party · ${members} membros`,
-    createOrJoin: '+ Criar ou entrar em uma party',
+    createOrJoin: 'Criar ou entrar em uma party',
     personalSearch: 'Busca pessoal',
+    menu: 'Menu',
+    openMenu: 'Abrir o menu',
+    more: 'Mais',
+    collapse: 'Recolher o menu',
+    expand: 'Expandir o menu',
   },
 
   theme: {
