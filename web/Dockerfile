@@ -67,6 +67,13 @@ ENV NODE_ENV=production \
 RUN groupadd --system --gid 1001 nodejs \
     && useradd --system --uid 1001 --gid nodejs nextjs
 
+# Mount point for the photo mirror (read-only here — the scraper is the writer).
+# Created with the same uid the scraper image uses, so a fresh named volume comes
+# up owned by 1001 whichever of the two containers happens to start first. Without
+# it in *both* images, the volume initialises root-owned from whichever one lacks
+# the directory, and the scraper can never write to it.
+RUN mkdir -p /media && chown 1001:1001 /media
+
 # .next/standalone mirrors the tracing root (/app), so it already contains
 # web/server.js and the traced node_modules tree.
 COPY --from=builder --chown=nextjs:nodejs /app/web/.next/standalone ./

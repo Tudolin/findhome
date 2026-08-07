@@ -541,6 +541,19 @@ crontab -e
 não é backup. Um `rclone copy backups/ remote:findhome` ou até arrastar para o
 Google Drive uma vez por semana já resolve.
 
+**As fotos ficam fora do dump.** O volume `findhome-media` guarda os arquivos de
+imagem, e o dump só tem o índice. Na maior parte dos casos isso não importa — o
+scraper baixa de novo. Importa num caso: **anúncio que saiu do ar**. Essas fotos
+não existem em nenhum outro lugar, e são justamente as dos imóveis que vocês
+avaliaram e querem rever. Se isso te preocupa, leve o volume também:
+
+```bash
+docker run --rm -v findhome-media:/media -v "$PWD/backups:/out" alpine \
+  tar czf /out/findhome-media-$(date +%Y%m%d).tar.gz -C /media .
+```
+
+Confira o tamanho antes de mandar para a nuvem: `make media-status`.
+
 Teste a restauração pelo menos uma vez, num banco descartável:
 
 ```bash

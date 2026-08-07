@@ -93,4 +93,23 @@ export const LIMITS = {
   /** Account creation is rare and expensive; treat a burst as abuse. */
   registerPerIp: { limit: 5, windowMs: 60 * 60_000 },
   registerGlobal: { limit: 25, windowMs: 60 * 60_000 },
+
+  /**
+   * Second-factor guesses, per challenge token.
+   *
+   * A TOTP code is six digits. One in a million per guess sounds safe until you
+   * notice a million is nothing to a script — and by this point the attacker
+   * already has the password, so this is the last thing standing. Five guesses
+   * per challenge means starting over (and re-submitting the password, which the
+   * account lockout is counting) after every five.
+   */
+  totpPerChallenge: { limit: 5, windowMs: 10 * 60_000 },
+  totpPerIp: { limit: 30, windowMs: 15 * 60_000 },
+
+  /**
+   * Step-up checks — the password re-entry guarding 2FA changes and session
+   * revocation. Tighter than login: the caller is already signed in, so a burst
+   * here is someone at a borrowed keyboard rather than a forgetful owner.
+   */
+  stepUpPerUser: { limit: 6, windowMs: 15 * 60_000 },
 } satisfies Record<string, RateLimit>;

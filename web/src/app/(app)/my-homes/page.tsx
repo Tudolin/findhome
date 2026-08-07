@@ -1,7 +1,7 @@
 import Link from 'next/link';
+import CompareGrid from '@/components/CompareGrid';
 import FeedControls from '@/components/FeedControls';
 import Pagination from '@/components/Pagination';
-import PropertyCard from '@/components/PropertyCard';
 import StatusTabs, { type StatusTab } from '@/components/StatusTabs';
 import { money } from '@/lib/format';
 import { getDictionary } from '@/lib/i18n/server';
@@ -55,6 +55,10 @@ export default async function MyHomesPage({ searchParams }: { searchParams: Sear
       status,
       // Never filtered by the saved profile — see the note above.
       ignorePreferences: true,
+      // And never hidden because the ad came down. Losing your own notes and
+      // ratings because a portal expired a listing is the opposite of what this
+      // screen is for; they stay, badged.
+      includeInactive: true,
       sort: parseSort(sp, 'reviewed_desc'),
       page: parsePage(sp),
       perPage: parsePerPage(sp, 24),
@@ -96,7 +100,7 @@ export default async function MyHomesPage({ searchParams }: { searchParams: Sear
     { label: t.myHomes.stats.pinned, value: String(summary.pinned) },
     { label: t.myHomes.stats.visits, value: String(summary.upcomingVisits) },
     { label: t.myHomes.stats.cheapest, value: money(summary.cheapest) },
-    { label: t.myHomes.stats.avgPrice, value: money(summary.avgPrice) },
+    { label: t.myHomes.stats.archived, value: String(summary.archived) },
   ];
 
   return (
@@ -167,11 +171,10 @@ export default async function MyHomesPage({ searchParams }: { searchParams: Sear
           </p>
         </div>
       ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {feed.items.map((property) => (
-            <PropertyCard key={property.id} property={property as unknown as UiProperty} workspace={workspace} />
-          ))}
-        </div>
+        // Only here, not on Discovery: comparing is something you do to a
+        // shortlist you have already narrowed, and a tick box on 2.000 cards is
+        // clutter rather than a feature.
+        <CompareGrid items={feed.items as unknown as UiProperty[]} workspace={workspace} />
       )}
 
       <Pagination

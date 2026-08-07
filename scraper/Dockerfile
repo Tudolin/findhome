@@ -69,6 +69,14 @@ RUN npx --yes playwright@${PLAYWRIGHT_VERSION} install --with-deps --only-shell 
 RUN groupadd --system --gid 1001 scraper \
     && useradd --system --uid 1001 --gid scraper --create-home scraper
 
+# Mount point for the photo mirror, created here so the named volume inherits
+# these permissions. Docker initialises an empty named volume from whatever the
+# image has at that path, ownership included — without this the volume would come
+# up root-owned and the scraper (uid 1001) could not write a single file.
+# `web` creates the same directory with the same uid, so whichever container
+# starts first, the result is the same.
+RUN mkdir -p /media && chown 1001:1001 /media
+
 WORKDIR /app
 COPY --chown=scraper:scraper prisma ./prisma
 COPY --from=prod-deps --chown=scraper:scraper /app/scraper/node_modules ./scraper/node_modules

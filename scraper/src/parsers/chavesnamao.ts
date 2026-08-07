@@ -91,7 +91,12 @@ function imageUrls(value: unknown): string[] {
     return [];
   };
 
-  return unique(collect(value).filter((url) => /^https?:/.test(url)).map(upgradeImage)).slice(0, 12);
+  // Uncapped: the ceiling is applied once, in persist.ts.
+  return unique(
+    collect(value)
+      .filter((url) => /^https?:/.test(url))
+      .map(upgradeImage),
+  );
 }
 
 /** The listing id is the /id-NNNNNNNN/ segment of the URL. */

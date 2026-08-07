@@ -25,6 +25,9 @@ export const FEED_SORTS = [
   'score',
   'rating_desc',
   'reviewed_desc',
+  'drop_desc',
+  'sitting',
+  'commute_asc',
 ] as const;
 
 export const FEED_STATUSES = [
@@ -63,6 +66,8 @@ export const FILTER_KEYS = [
   'rated',
   'pinned',
   'listingType',
+  'maxCommute',
+  'droppedOnly',
   'ignorePreferences',
   'perPage',
 ] as const;
@@ -145,6 +150,8 @@ export function parseFilters(sp: RawSearchParams): FeedFilters {
     ratedOnly: flag(sp.rated),
     pinnedOnly: flag(sp.pinned),
     listingType: one(sp.listingType) === 'SALE' ? 'SALE' : one(sp.listingType) === 'RENT' ? 'RENT' : undefined,
+    maxCommuteMin: positive(sp.maxCommute),
+    droppedOnly: flag(sp.droppedOnly),
   };
 }
 

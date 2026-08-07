@@ -12,7 +12,8 @@ export
 .DEFAULT_GOAL := help
 .PHONY: help setup up down restart build rebuild logs logs-web logs-scraper ps \
         migrate seed scrape scrape-now scrape-demo doctor shell-db psql backup \
-        restore update prune status scrape-status photos
+        restore update prune status scrape-status photos photos-stats \
+        mirror media-clean media-status
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -81,8 +82,26 @@ scrape-status: ## Show the last run's outcome per source
 doctor: ## Probe every configured portal and report what is broken and why
 	$(COMPOSE) exec scraper node dist/doctor.js $(SOURCES)
 
-photos: ## Fetch full galleries for listings stored with only a cover photo: make photos [N=400]
-	$(COMPOSE) exec $(if $(N),-e PHOTOS_MAX_PER_RUN=$(N),) scraper node dist/photos-cli.js
+photos: ## Fetch full galleries: make photos [N=2000] [RESET=1|<min-photos>]
+	$(COMPOSE) exec $(if $(N),-e PHOTOS_MAX_PER_RUN=$(N),) scraper node dist/photos-cli.js \
+	  $(if $(RESET),$(if $(filter 1,$(RESET)),--reset,--reset=$(RESET)),)
+
+mirror: ## Download photo FILES to the local mirror: make mirror [N=4000]
+	$(COMPOSE) exec $(if $(N),-e PHOTOS_MIRROR_MAX_PER_RUN=$(N),) scraper node dist/media-cli.js mirror
+
+media-clean: ## Delete untouched dead listings, orphaned photo files and stale downloads
+	$(COMPOSE) exec scraper node dist/media-cli.js clean
+
+media-status: ## Mirror size, budget, and how many dead listings are safe to purge
+	@$(COMPOSE) exec scraper node dist/media-cli.js status
+
+photos-stats: ## Photos per listing, per source — the number to check when a carousel is short
+	@$(COMPOSE) exec db psql -U $${POSTGRES_USER:-findhome} -d $${POSTGRES_DB:-findhome} -c "\
+	  SELECT source, count(*) AS listings, \
+	         count(*) FILTER (WHERE photos_fetched_at IS NULL) AS never_tried, \
+	         round(avg(photo_count), 1) AS avg_photos, max(photo_count) AS most, \
+	         count(*) FILTER (WHERE photo_count <= 1) AS one_or_none \
+	  FROM properties WHERE active GROUP BY source ORDER BY source;"
 
 psql shell-db: ## Open a psql prompt on the database
 	$(COMPOSE) exec db psql -U $${POSTGRES_USER:-findhome} -d $${POSTGRES_DB:-findhome}

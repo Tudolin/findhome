@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import type { PartyRole } from '@prisma/client';
 import { prisma } from './prisma';
-import { getSession, WORKSPACE_COOKIE, type SessionPayload } from './auth';
+import { getSession, WORKSPACE_COOKIE, type ResolvedSession } from './auth';
 import { forbidden, unauthorized } from './http';
 
 export const SOLO_SCOPE = 'solo';
@@ -25,7 +25,13 @@ export type Workspace = {
   members: WorkspaceMember[];
 };
 
-export async function requireUser(): Promise<SessionPayload> {
+/**
+ * The signed-in user, or a 401.
+ *
+ * Returns the *resolved* session — it carries `sessionId`, which the security
+ * routes need to tell "this device" apart from the others when revoking.
+ */
+export async function requireUser(): Promise<ResolvedSession> {
   const session = await getSession();
   if (!session) throw unauthorized();
   return session;
@@ -54,7 +60,7 @@ export async function assertPartyMembership(userId: string, partyId: string) {
   return membership;
 }
 
-function soloWorkspace(session: SessionPayload): Workspace {
+function soloWorkspace(session: ResolvedSession): Workspace {
   return {
     kind: 'SOLO',
     scopeKey: SOLO_SCOPE,

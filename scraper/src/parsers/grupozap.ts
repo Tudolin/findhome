@@ -1,4 +1,4 @@
-import type { PropertySource } from '@prisma/client';
+import type { ListingType, PropertySource } from '@prisma/client';
 import { DEVICE_ID } from '../browser.js';
 import { env } from '../config.js';
 import { describeFailure, requestJson } from '../http.js';
@@ -153,18 +153,39 @@ function pickAddress(address: Record<string, unknown> | undefined) {
   };
 }
 
-export function mapListing(raw: GlueListing, portalOrigin: string): RawListing | null {
+export function mapListing(
+  raw: GlueListing,
+  portalOrigin: string,
+  listingType: ListingType = 'RENT',
+): RawListing | null {
   const listing = (raw.listing ?? raw) as Record<string, unknown>;
   const externalId = idText(listing.id ?? raw.id);
   if (!externalId) return null;
 
   const pricing = (listing.pricingInfos as Array<Record<string, unknown>> | undefined) ?? [];
-  // A listing can carry both RENTAL and SALE pricing; rent is what we track.
-  const rental = pricing.find((p) => String(p.businessType).toUpperCase() === 'RENTAL') ?? pricing[0];
-  if (!rental) return null;
 
-  const rentPrice = toMoney(rental.price ?? rental.rentalTotalPrice);
-  if (!rentPrice) return null;
+  /**
+   * A listing can carry BOTH a RENTAL and a SALE pricing block, and which one is
+   * the answer depends on what was searched for.
+   *
+   * This used to be hard-coded to RENTAL, with `listingType: 'RENT'` written on
+   * every result — so a Buy search sent `business=SALE`, got sale listings back,
+   * and stored them as rentals at their *sale* price. `preferenceWhere` then
+   * filtered on `listingType: 'SALE'` and matched nothing at all, which is why
+   * Buy came back empty from ZAP and Viva Real while looking like a quiet market.
+   *
+   * Falling back to the other block rather than to `pricing[0]`: a SALE search
+   * that comes back with a rental-only listing is padding, and storing its rent
+   * as a sale price is exactly the R$ 3.200 "apartment for sale" bug.
+   */
+  const wanted = listingType === 'SALE' ? 'SALE' : 'RENTAL';
+  const priced = pricing.find((p) => String(p.businessType).toUpperCase() === wanted);
+  if (!priced) return null;
+
+  // SALE puts the number in `price`; RENTAL uses `price`, occasionally
+  // `rentalTotalPrice` when the ad quotes an all-in figure.
+  const price = toMoney(listingType === 'SALE' ? priced.price : (priced.price ?? priced.rentalTotalPrice));
+  if (!price) return null;
 
   const location = pickAddress(listing.address as Record<string, unknown> | undefined);
   if (!location.city) return null;
@@ -181,8 +202,9 @@ export function mapListing(raw: GlueListing, portalOrigin: string): RawListing |
     [...((listing.images as string[] | undefined) ?? []), ...medias.map((m) => clean(m.url))]
       .filter(Boolean)
       // The API returns templated URLs like .../{action}/{width}x{height}/...
-      .map((url) => url.replace('{action}', 'fit-in').replace('{width}x{height}', '800x600'))
-      .slice(0, 12),
+      .map((url) => url.replace('{action}', 'fit-in').replace('{width}x{height}', '800x600')),
+    // No cap here. The ceiling is applied once, in persist.ts, from
+    // PHOTOS_MAX_PER_LISTING — and it defaults to no limit.
   );
 
   const amenities = unique(
@@ -190,7 +212,7 @@ export function mapListing(raw: GlueListing, portalOrigin: string): RawListing |
   ).slice(0, 25);
 
   const description = clean(listing.description, 2000);
-  const yearlyIptu = toMoney(rental.yearlyIptu);
+  const yearlyIptu = toMoney(priced.yearlyIptu);
 
   return {
     externalId,
@@ -198,8 +220,14 @@ export function mapListing(raw: GlueListing, portalOrigin: string): RawListing |
     title: clean(listing.title, 200) || `Imóvel em ${location.neighborhood || location.city}`,
     description: description || null,
     ...location,
-    rentPrice,
-    condoFee: toMoney(rental.monthlyCondoFee),
+    // `rentPrice` is the headline price whatever the business type — rent per
+    // month for RENT, the asking price for SALE. persist.ts is what knows the
+    // difference when it computes `totalPrice`.
+    rentPrice: price,
+    // Monthly running costs. They are real on a sale listing too (you still pay
+    // condo and IPTU after buying), so they are kept — but they are NOT added
+    // into the asking price. See normalize() in persist.ts.
+    condoFee: toMoney(priced.monthlyCondoFee),
     taxFee: yearlyIptu > 0 ? Math.round(yearlyIptu / 12) : 0,
     bedrooms: toInt(listing.bedrooms),
     bathrooms: toInt(listing.bathrooms),
@@ -208,7 +236,7 @@ export function mapListing(raw: GlueListing, portalOrigin: string): RawListing |
     images,
     amenities,
     petFriendly: detectPetPolicy(`${description} ${amenities.join(' ')}`),
-    listingType: 'RENT',
+    listingType,
   };
 }
 
@@ -280,7 +308,7 @@ function buildParser(source: 'ZAP' | 'VIVA_REAL'): Parser {
         if (!listings || listings.length === 0) break;
 
         for (const raw of listings) {
-          const mapped = mapListing(raw, portal.origin);
+          const mapped = mapListing(raw, portal.origin, target.listingType);
           if (mapped) results.push(mapped);
         }
 

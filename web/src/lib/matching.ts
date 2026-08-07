@@ -50,7 +50,13 @@ export function preferenceWhere(pref: PreferenceProfile | null): Prisma.Property
   }
 
   if (hasPriceFilter) {
-    if (pref.includeCondoInMaxPrice) where.totalPrice = price;
+    // `includeCondoInMaxPrice` is a rent-only idea: it chooses between comparing
+    // the budget against bare rent or against rent + condo + IPTU. A sale has no
+    // "all-in" — `totalPrice` IS the asking price for a SALE row (see
+    // normalize() in scraper/src/persist.ts) — so the flag is ignored rather
+    // than honoured on a field where it would mean nothing.
+    if (pref.listingType === 'SALE') where.totalPrice = price;
+    else if (pref.includeCondoInMaxPrice) where.totalPrice = price;
     else where.rentPrice = price;
   }
 
@@ -67,13 +73,17 @@ export function preferenceWhere(pref: PreferenceProfile | null): Prisma.Property
 export function describePreferences(pref: PreferenceProfile | null): string {
   if (!pref) return 'No preferences set yet — showing every listing.';
 
+  const forSale = pref.listingType === 'SALE';
   const place = [pref.city, pref.state].filter(Boolean).join('/');
   const parts: string[] = [pref.neighborhoods.length ? `${pref.neighborhoods.join(', ')} · ${place}` : place];
 
+  parts.push(forSale ? 'for sale' : 'to rent');
+
   if (pref.maxPrice != null) {
-    parts.push(
-      `up to R$ ${pref.maxPrice.toLocaleString('pt-BR')} ${pref.includeCondoInMaxPrice ? 'all-in' : 'rent only'}`,
-    );
+    // No "all-in" / "rent only" qualifier on a sale: there is nothing to include,
+    // and saying "R$ 800.000 all-in" reads as though the fees were folded in.
+    const qualifier = forSale ? '' : ` ${pref.includeCondoInMaxPrice ? 'all-in' : 'rent only'}`;
+    parts.push(`up to R$ ${pref.maxPrice.toLocaleString('pt-BR')}${qualifier}`);
   }
   if (pref.minBedrooms) parts.push(`${pref.minBedrooms}+ bed`);
   if (pref.minParkingSpots) parts.push(`${pref.minParkingSpots}+ parking`);

@@ -76,7 +76,9 @@ function matchWhere(profile: PreferenceProfile, since: Date) {
     ...(profile.petFriendly ? { petFriendly: { not: false } } : {}),
     ...(profile.amenities.length ? { amenities: { hasEvery: profile.amenities } } : {}),
     // The point of the whole feature: only what has not been announced yet.
-    alerts: { none: { scopeKey: scopeKeyFor(profile) ?? '' } },
+    // Scoped to `kind: 'NEW'` now that other kinds exist — otherwise a price-drop
+    // notice would suppress the "this listing is new" one, or vice versa.
+    alerts: { none: { scopeKey: scopeKeyFor(profile) ?? '', kind: 'NEW' } },
   };
 }
 
@@ -147,12 +149,105 @@ async function alertProfile(profile: PreferenceProfile): Promise<number> {
   }
 
   await prisma.alertDelivery.createMany({
-    data: batch.map((listing) => ({ scopeKey, propertyId: listing.id, channel: provider })),
+    data: batch.map((listing) => ({ scopeKey, propertyId: listing.id, channel: provider, kind: 'NEW' })),
     skipDuplicates: true,
   });
 
   log.info(`${scopeKey}: announced ${batch.length} listing(s)${remaining ? `, ${remaining} queued` : ''}`);
   return batch.length;
+}
+
+/**
+ * Alerts about listings you already know.
+ *
+ * The original feature only ever said "here is something new", which misses the
+ * two moments that actually matter once you have a shortlist:
+ *
+ *   - the price dropped on a flat you rated or shortlisted
+ *   - the ad closed on one you had booked a visit for
+ *
+ * Only listings this workspace has *reacted to* qualify. An untouched listing
+ * changing price is noise; one you gave four stars changing price is the message
+ * you would want someone to wake you up for.
+ */
+async function alertEvents(profile: PreferenceProfile): Promise<number> {
+  const scopeKey = scopeKeyFor(profile);
+  const phone = normalizePhone(profile.alertWhatsapp);
+  if (!scopeKey || !phone) return 0;
+
+  const provider = configuredProvider();
+  const since = new Date(Date.now() - MAX_AGE_HOURS * 3_600_000);
+  /** Interactions belonging to this workspace, in the shape those rows use. */
+  const mine = profile.partyId ? { partyId: profile.partyId } : { userId: profile.userId ?? '' };
+  const reacted = { some: { ...mine, status: { not: 'DISCOVERED' as const } } };
+
+  const [drops, gone] = await Promise.all([
+    prisma.property.findMany({
+      where: {
+        active: true,
+        interactions: reacted,
+        alerts: { none: { scopeKey, kind: 'PRICE_DROP' } },
+        // A cut, recently, and big enough to matter. The 2% floor is the same
+        // threshold the cards use for a badge — a R$ 20 move is not a message.
+        priceEvents: { some: { seenAt: { gte: since }, delta: { lt: -100 } } },
+      },
+      take: 5,
+      select: {
+        id: true,
+        title: true,
+        neighborhood: true,
+        city: true,
+        totalPrice: true,
+        rentPrice: true,
+        bedrooms: true,
+        sqm: true,
+        sourceUrl: true,
+        source: true,
+        priceEvents: { orderBy: { seenAt: 'desc' }, take: 1, select: { delta: true } },
+      },
+    }),
+    prisma.property.findMany({
+      where: {
+        active: false,
+        goneAt: { gte: since },
+        interactions: reacted,
+        alerts: { none: { scopeKey, kind: 'GONE' } },
+      },
+      take: 5,
+      select: { id: true, title: true, neighborhood: true, city: true, totalPrice: true },
+    }),
+  ]);
+
+  if (drops.length === 0 && gone.length === 0) return 0;
+
+  const lines: string[] = [];
+  for (const listing of drops) {
+    const delta = Math.abs(listing.priceEvents[0]?.delta ?? 0);
+    lines.push(
+      `📉 *Baixou ${money(delta)}* — agora ${money(listing.totalPrice)}\n` +
+        `${listing.neighborhood}, ${listing.city}\n${listing.sourceUrl}`,
+    );
+  }
+  for (const listing of gone) {
+    lines.push(`🗄️ *Saiu do ar* — ${listing.title.slice(0, 70)}\n${listing.neighborhood}, ${listing.city}`);
+  }
+
+  const result = await sendWhatsApp(phone, `🔔 Novidades nos seus imóveis\n\n${lines.join('\n\n')}`);
+  if (!result.ok) {
+    log.warn(`${scopeKey}: ${lines.length} update(s) not announced — ${result.detail}`);
+    return 0;
+  }
+
+  await prisma.alertDelivery.createMany({
+    data: [
+      ...drops.map((p) => ({ scopeKey, propertyId: p.id, channel: provider, kind: 'PRICE_DROP' })),
+      ...gone.map((p) => ({ scopeKey, propertyId: p.id, channel: provider, kind: 'GONE' })),
+    ],
+    skipDuplicates: true,
+  });
+
+  log.info(`${scopeKey}: announced ${drops.length} price drop(s) and ${gone.length} closed ad(s)`);
+  return lines.length;
 }
 
 /**
@@ -173,7 +268,7 @@ async function primeBaseline(profile: PreferenceProfile): Promise<number> {
   if (existing.length === 0) return 0;
 
   await prisma.alertDelivery.createMany({
-    data: existing.map((p) => ({ scopeKey, propertyId: p.id, channel: 'baseline' })),
+    data: existing.map((p) => ({ scopeKey, propertyId: p.id, channel: 'baseline', kind: 'NEW' })),
     skipDuplicates: true,
   });
   return existing.length;
@@ -211,6 +306,9 @@ export async function runAlerts(): Promise<void> {
       }
 
       await alertProfile(profile);
+      // Second, and separately: a listing can be both new and already reacted to
+      // in the same run, and the two messages answer different questions.
+      await alertEvents(profile);
     } catch (err) {
       // One broken workspace must not stop the others, and must not fail the run.
       log.error(`${scopeKey}: alert check failed`, err);

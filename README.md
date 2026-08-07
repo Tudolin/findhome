@@ -83,6 +83,161 @@ Two deliberate differences from Discovery:
   moving.
 - **The default sort is "recently reviewed"**, not "newest listing".
 
+### The public front door
+
+`/` is browsable without an account: the newest listings, a handful of filters, and
+then a sign-up gate. `/imovel/<id>` shows one of them read-only. Everything else
+still requires signing in.
+
+```ini
+PUBLIC_FEED_LIMIT=20       # listings shown before the gate
+PUBLIC_FEED_CACHE_MS=60000 # in-process cache for the public queries
+```
+
+**The gate is a product decision, not a security boundary.** Everything on that
+page is already public on the portal it came from, and the blurred teasers under
+the fold are real listings sitting in the HTML. The limit exists because *saving*
+a flat needs somewhere to save it, not because the data is secret — a paywall over
+public data would cost more than it protects.
+
+**What is protected is everyone else's data.** The public page never calls
+`getFeed`, never constructs a `Workspace`, and its query lives in a separate module
+(`web/src/lib/public-feed.ts`) whose select list contains only columns that were
+public to begin with. There is no code path from there to a rating, a note, a pin
+or a party — not because the code is careful, but because `PublicListing` has
+nowhere to put them. `PublicCard` is a separate component from `PropertyCard` for
+the same reason.
+
+Two operational notes:
+
+- The page is `force-dynamic` (it reads the session cookie to bounce signed-in
+  visitors to `/dashboard`), so Next cannot cache it. The in-process cache above
+  is what stops every anonymous hit being three database round trips.
+- `robots.txt` still disallows everything. The listings are not yours — letting a
+  person browse them is a different thing from inviting search engines to index a
+  copy of somebody else's catalogue. Opting in is one commented block away, and
+  the file explains the trade.
+
+> If `ALLOW_REGISTRATION=false`, the gate says the server is not accepting new
+> accounts instead of linking to a form that will refuse them.
+
+### Signing in
+
+Rebuilt for a server that faces the internet. What changed and why:
+
+| | Before | Now |
+|---|---|---|
+| Session | stateless JWT, **impossible to revoke** | row in `sessions`; sign out actually signs out |
+| Signing out | deleted the cookie only | revokes the row |
+| Changing password | did not invalidate anything | kills every other session |
+| Second factor | none | TOTP + 10 single-use recovery codes |
+| Password rule | `min(8)` | 12 chars, blocklist, no sequences, not your own name/email |
+| Lockout | in-memory, reset on every restart | in the database, survives deploys |
+| Failed attempts | invisible | listed on **Segurança**, per device and IP |
+| bcrypt | cost 10 | cost 12, old hashes upgraded on next sign-in |
+| Cross-origin POSTs | SameSite only | Origin check on every mutating route |
+
+Two deliberate choices worth knowing about:
+
+**The session table is checked on every request, not by the middleware.** The
+middleware runs on the Edge runtime and cannot reach Prisma, so it stays a cheap
+signature gate; `getSession()` in the page and API layer is the authority. That is
+the same split `workspace.ts` already used for membership.
+
+**Every action on the Segurança screen re-asks for the password.** The threat is
+not a stranger on the internet — it is an unlocked laptop. Without it, thirty
+seconds at a signed-in browser is enough to turn off 2FA, sign the owner's phone
+out, and change the password, locking them out permanently.
+
+TOTP is implemented directly against RFC 6238 (`web/src/lib/totp.ts`, ~60 lines,
+no dependency) with the accepted time step recorded so a code cannot be replayed
+inside its own validity window.
+
+```ini
+BCRYPT_ROUNDS=12
+LOGIN_LOCK_THRESHOLD=8      # wrong passwords in a row before a lock
+LOGIN_LOCK_MINUTES=15
+LOGIN_AUDIT_DAYS=90
+```
+
+> **Everyone is signed out by the deploy that adds this.** Session tokens now carry
+> an audience and a `jti`; tokens issued before it have neither and are rejected.
+> That is the correct behaviour — the old tokens are exactly the ones that could
+> not be revoked — but it means one round of signing in again.
+
+### The signals no portal shows
+
+**Price history.** The scraper re-reads every listing twice a day and used to
+overwrite the price each time, silently discarding the most useful signal in a
+rental market. Now a row is written per *change* (never per sighting), so cards
+show `↓ R$ 300`, the feed sorts by biggest cut, and you can filter to listings
+whose advertiser has already blinked.
+
+**Days on the market.** Free — `createdAt` was already preserved across every
+re-scrape and nothing read it. Past ~45 days a listing is flagged as sitting,
+which is the other half of the negotiation. (Honest caveat: it is days since *we*
+first saw it, not since it was posted. That gap closes on its own.)
+
+**Same flat, several ads.** One apartment listed by two agencies on three portals
+is three rows that key-based de-duplication cannot merge — they are genuinely
+different ads. `scraper/src/dedupe.ts` clusters them on coordinates (60 m), bedroom
+count and floor area (±5%). Price is deliberately *not* part of the match: two
+agencies quoting different numbers is the case worth surfacing. Conservative
+throughout, because a false merge hides a listing permanently while a missed one is
+merely annoying.
+
+**Commute time.** `COMMUTE_PROVIDER=osrm|ors`. Off by default because it needs a
+router — self-hosted OSRM is free and unlimited, OpenRouteService's free key covers
+a household. A straight-line pre-filter answers the obvious misses locally, so most
+of the queue costs no request at all.
+
+**Real cost to buy.** ITBI, escritura and registro — around R$ 30.000 on a
+R$ 650.000 flat, on no portal anywhere. Rates are configurable and the result is
+labelled an estimate, because ITBI is municipal and genuinely varies.
+
+**Compare.** Two to four side by side, from **Seus apartamentos**. The best figure
+in each row is highlighted; there is deliberately no single winning score, because
+the trade-off is the reason you are comparing.
+
+**Alerts about listings you already know.** Not just "here is something new": a
+price cut on a flat you rated, and the ad closing on one you had booked a visit
+for.
+
+### Renting or buying
+
+Set it per workspace in **Preferences → Listing type**. It is not a cosmetic
+switch — a price means a different thing in each mode, and `total_price` (the
+column the feed filters and sorts on) is written accordingly:
+
+| | `rent_price` | `condo_fee` / `tax_fee` | `total_price` |
+|---|---|---|---|
+| **Rent** | monthly rent | monthly | rent + condo + IPTU — one monthly figure |
+| **Buy** | asking price | monthly, **after** buying | the asking price, **alone** |
+
+Adding the monthly costs to an asking price is not a rounding error: a
+R$ 650.000 flat with a R$ 900 condo fee was stored at R$ 651.200, so a "up to
+R$ 650.000" search missed it and the card read `R$ 651.200 /mês`. Migration
+`20260807000000_sale_total_price` repairs rows written before this.
+
+Everything price-shaped follows the mode:
+
+- **Preferences** offers a purchase range (up to R$ 3.000.000 in R$ 10.000 steps)
+  with a text box for the exact figure and one-tap common ceilings. Switching
+  mode moves an implausible budget with it, instead of leaving a R$ 5.000 ceiling
+  on a Buy profile and returning nothing.
+- **"Include the condo fee in the ceiling"** disappears in Buy mode. There is
+  nothing to include in an asking price.
+- **The feed toolbar** switches its price steps and its number-input increment.
+- **Cards and the detail screen** say *asking price* rather than */mês total*,
+  and show the condo fee and IPTU as what you keep paying, not as part of the sum.
+
+> **ZAP and Viva Real were broken in Buy mode until now.** `mapListing` always
+> read the RENTAL pricing block and wrote `listingType: 'RENT'`, so a Buy search
+> sent `business=SALE`, got sale listings back, and stored them as rentals at
+> their sale price — where the feed's `listingType: 'SALE'` filter then matched
+> none of them. It looked like a quiet market. `make doctor` now probes with the
+> target's real listing type, so this cannot pass as healthy again.
+
 ### Filtering
 
 The toolbar on both feeds narrows *on top of* the saved preferences — never past
@@ -428,46 +583,61 @@ The distinctions it draws are the useful part:
 
 ### Photo galleries
 
-Only half the portals put the whole gallery in their search response:
+**No portal puts its whole gallery in a search response**, and three of them put
+exactly one photo there:
 
 | Source | Photos in the search response |
 |---|---|
-| `ZAP`, `VIVA_REAL` | every photo (`listing.images[]`) |
-| `QUINTO_ANDAR` | every photo (`coverImage` + `imageList`) |
+| `ZAP`, `VIVA_REAL` | a handful (`listing.images[]`), rarely the whole album |
+| `QUINTO_ANDAR` | a handful (`coverImage` + `imageList`) |
 | `OLX` | **the cover, only** |
 | `CHAVES_NA_MAO` | **the cover, only** (schema.org `item.image`) |
 | `IMOVELWEB` | **the cover** — the card carousel is lazy-loaded and never renders on a results page |
 
-That is not a parser bug; those portals genuinely do not publish the gallery
-there. It only exists on the listing's own page, which is one navigation per
-listing and therefore cannot happen inline with the search. So there is a second
-pass (`scraper/src/photos.ts`), shaped like the geocoder: bounded per run, stamped
-so nothing is retried forever, and never allowed to fail the scrape.
+That is not a parser bug. The rest only exists on the listing's own page, which
+is one navigation per listing and therefore cannot happen inline with the search.
+So there is a second pass (`scraper/src/photos.ts`), shaped like the geocoder:
+bounded per run, stamped so nothing is retried forever, and never allowed to fail
+the scrape.
 
-It tries four strategies on each page and merges all of them — schema.org
-`ImageObject`, the hydration payload, `og:image`, then the DOM (`src`, `data-src`,
-`srcset`, `<link rel=preload as=image>`) — filters out logos, sprites and tracking
-pixels via an allowlist of the portals' image hosts, and applies the same size
-upgrades the parsers use. **No image is ever downloaded**: `BrowserPool` aborts
-every image request, so the pass reads URLs, not bytes.
+It runs four strategies on each page and merges all of them — schema.org
+`ImageObject`, the hydration payload, `og:image`, then the DOM (`src`, every
+`data-*`, `srcset`, CSS `background-image`, `<link rel=preload as=image>`) — then
+applies the same size upgrades the parsers use.
+
+**No image is ever downloaded.** Image requests are answered with a 43-byte 1×1
+GIF, so the pass reads URLs rather than bytes. That detail matters more than it
+sounds: `BrowserPool` used to *abort* them, and a carousel that appends its next
+slide in an `onload` handler stops dead when the first image fails. Stubbing lets
+the lazy chain run to the end at zero bandwidth, and it is the single biggest
+reason galleries used to come back short.
+
+Nothing is capped by default: `PHOTOS_MAX_PER_LISTING=0` stores every photo found,
+and `PHOTOS_MIN_IMAGES=0` means every listing gets its page opened once regardless
+of what the search already gave us.
 
 ```bash
-make photos            # work through the backlog now
-make photos N=400      # bigger catch-up pass, e.g. right after upgrading
-make doctor            # prints photos-per-listing per source, and why
+make photos                   # work through the backlog now
+make photos N=2000 RESET=5    # re-visit everything with fewer than 5 photos
+make photos-stats             # photos per listing, per source
+make doctor                   # what each portal returns, and why
 ```
 
 ```ini
-PHOTOS_ENABLED=true        # the pass reuses the scrape's Chromium, so it is on by default
-PHOTOS_MAX_PER_RUN=60      # one page load each — this is the budget
-PHOTOS_MIN_IMAGES=3        # listings at or above this are left alone
-PHOTOS_DELAY_MS=1200
+PHOTOS_ENABLED=true         # reuses the scrape's Chromium, so it is on by default
+PHOTOS_MAX_PER_RUN=200      # one page load each — this is the budget
+PHOTOS_MIN_IMAGES=0         # 0 = no gate; N skips listings that already have N
+PHOTOS_MAX_PER_LISTING=0    # 0 = store every photo found
+PHOTOS_DELAY_MS=900
+PHOTOS_SETTLE_MS=1200       # how long to let a lazy carousel finish
 PHOTOS_TIMEOUT_MS=30000
 ```
 
 Two columns keep the books: `photos_fetched_at` (null = never asked) and
 `photo_count` (0 after a fetch = asked, found nothing). The distinction is what
-stops a listing that genuinely has one photo from being re-opened every run.
+stops a listing that genuinely has one photo from being re-opened every run —
+and `RESET=` is how you clear the stamp after improving the pass, because
+otherwise the improvement never reaches the rows it already gave up on.
 
 > **The subtle part:** re-scraping must not undo this. A plain `update` would
 > write the search result's single cover photo over a backfilled gallery, and
@@ -476,6 +646,137 @@ stops a listing that genuinely has one photo from being re-opened every run.
 > `scraper/src/persist.ts` is the one place that decides this: a smaller incoming
 > set never replaces a larger stored one, genuinely new photos are unioned in and
 > clear the stamp, and an unchanged set touches nothing.
+
+### The photo mirror
+
+Everything above still hotlinks the portal's CDN, which breaks in two ways:
+
+1. **Portals expire their photo URLs.** A flat shortlisted in March is a wall of
+   grey placeholders in May — exactly when you are comparing the three you visited
+   and trying to remember which had the good kitchen.
+2. **OLX's CDN refuses any Referer that is not olx.com.br.** `ListingImage`
+   works around it by sending *none*, which mostly works; a proper fix needs a
+   Referer the browser is not allowed to fake.
+
+So the scraper downloads the files. It **can** send the portal's own Referer,
+because it fetches server-side — which makes mirroring the real fix for the 403s
+rather than a cache.
+
+```bash
+make mirror [N=4000]   # work through the backlog
+make media-status      # size, budget, what is safe to purge
+make media-clean       # housekeeping now, without waiting for cron
+```
+
+Files land on a Docker volume shared with `web` and are **content-addressed** by a
+hash of the (query-stripped) URL, so two listings advertising the same flat share
+one file:
+
+```
+/media/a3/a3f19c…c4.webp
+```
+
+`property_photos` is the index beside `Property.images`. **`images` stays
+canonical** — still the portal's URLs in the portal's order — and
+`displayImages()` swaps in a local copy only where one exists. With the mirror off
+or empty, the app behaves exactly as it did before it existed.
+
+Serving is `web/src/app/media/[...path]/route.ts`: a stat and a stream, no session
+check, `immutable` for a year (the bytes at a content-addressed path cannot
+change). It is excluded from the auth middleware on purpose — the path is a
+SHA-256 of a URL whose content is already public on the portal, and redirecting an
+image request to `/login` renders a broken image, not a login screen.
+
+**Priority is the interesting part.** Photos of listings somebody has reacted to
+— rated, shortlisted, pinned, booked a visit for — are mirrored first and evicted
+last, because those are the ones you can no longer go and look at on the portal.
+
+```ini
+PHOTOS_MIRROR=true
+PHOTOS_MIRROR_MAX_MB=2048        # a budget, not a suggestion: 10k×20×120kB is 24 GB
+PHOTOS_MIRROR_MAX_PER_RUN=400
+PHOTOS_MIRROR_MAX_FILE_KB=4096
+PHOTOS_MIRROR_MAX_FAILURES=3     # then give up on that URL
+```
+
+Over budget, the least valuable copies are evicted in tiers (untouched + dead →
+untouched → dead → anything) rather than the download simply failing. Eviction
+clears `path` and keeps the row, so the photo still renders from the portal and
+can be re-mirrored if space frees up.
+
+### Listings that come down
+
+Three things happen when an ad disappears, and before this only the first did:
+
+**1. The row goes inactive.** `deactivateStale` already did that after
+`SCRAPE_STALE_DAYS` of absence from search results — but absence is a guess. The
+gallery pass opens listing pages anyway, so a **404 or 410 there is direct
+evidence**, and `gone_at` records it the day it happens instead of three weeks
+later. 403 deliberately does *not* count: that is a bot wall, and treating it as
+"gone" would empty the catalogue the first time an IP got blocked.
+
+**2. The row is eventually deleted** — with one hard rule:
+
+> **A listing anyone has touched is never deleted.** A rating, a status, a pin, a
+> comment, a booked visit: any of those means somebody did work on that flat, and
+> "the ad expired" is not a reason to throw their notes away.
+
+Untouched inactive listings go after `CLEANUP_PURGE_DAYS` (60). Everything else is
+kept indefinitely and reported, because *"1.400 listings are being kept because you
+reviewed them"* is useful information and its absence is what makes a cleanup pass
+feel broken.
+
+**3. Its photos are reclaimed.** Rows cascade with the listing; the *files* are
+then collected by an orphan sweep, because content-addressed files are shared and
+a live listing may point at the same photo. Interrupted `.part` downloads are
+swept in the same pass.
+
+```ini
+CLEANUP_PURGE_DAYS=60     # 0 disables deletion; the catalogue then grows forever
+CLEANUP_MAX_PER_RUN=2000
+```
+
+**In the app**, a dead listing you had reviewed no longer vanishes. It stays in
+**Your homes** — which is the whole point of that screen — with the archived
+treatment below. Discovery still hides them: a flat you cannot go and see does not
+belong in a feed of what is on the market.
+
+### The archived model
+
+Once an ad closes, the listing becomes a *record*, and it is presented as one.
+
+**Photos.** A closed ad's URLs die with it — CDNs drop the files a little while
+after. Rendering them anyway is what turns an archive into a wall of grey
+placeholders, on the exact screen where you are trying to remember which of three
+flats had the good kitchen. So the rule is: **a closed ad renders only what we hold
+locally**, and the rest is *stated*:
+
+> *mais 11 fotos não puderam ser guardadas*
+
+A stated absence beats eleven broken frames. `galleryFor()` in `web/src/lib/media.ts`
+is the single place that decides this.
+
+**Disk.** After `CLEANUP_ARCHIVE_DAYS` (7 — portals re-post, so an ad back within
+the week finds its gallery intact), the mirror collapses to `CLEANUP_ARCHIVE_KEEP`
+photos, one by default. One cover is enough to recognise the flat in a shortlist;
+twenty of a place nobody can rent is what quietly fills a 2 GB budget and crowds out
+listings that are still live. Only `path` is cleared — files are content-addressed
+and shared, so the orphan sweep is what reclaims them once *nothing* references them.
+
+**Everything else is kept.** The URL list, the price, the specs, your rating, your
+notes, your pros and cons, the comment thread, the booked visits. Nothing about the
+record is thrown away; only the redundant image copies are.
+
+**What the card says.** Desaturated cover, a ring, and a ribbon reading *anúncio
+encerrado* (its page 404s) or *fora dos resultados* (merely absent). The price is
+relabelled **último valor** — a live-looking `/mês total` next to a closed ad
+implies you could still take it at that number. The *Anúncio ↗* link becomes
+*Anúncio ✕*, still clickable but no longer promising anything.
+
+> **The app does not claim the flat was rented.** It knows the ad closed. The detail
+> screen says so plainly and adds *"normalmente significa que foi alugado ou
+> vendido, mas também pode ser que o anunciante apenas tenha retirado"* — because
+> inventing the stronger fact would be inventing data we do not have.
 
 ### Triggering a run by hand
 
@@ -832,6 +1133,29 @@ make restore FILE=backups/findhome-20260804-031500.sql.gz
 To move the whole install to another machine, copy the repo, the `.env` and one
 dump — that's everything.
 
+### What about the photo mirror?
+
+`findhome-media` is *mostly* a cache: delete it and the next few scrapes rebuild
+it from the portals. **Mostly**, because of one case that matters — a listing whose
+ad has since come down. Those files cannot be re-downloaded from anywhere, and they
+are exactly the photos of flats somebody rated and wanted to look at again.
+
+The dump does not contain them (it holds the index, not the bytes). If that case
+matters to you, take the volume too:
+
+```bash
+# Alongside make backup
+docker run --rm -v findhome-media:/media -v "$PWD/backups:/out" alpine \
+  tar czf /out/findhome-media-$(date +%Y%m%d).tar.gz -C /media .
+
+# Restore
+docker run --rm -v findhome-media:/media -v "$PWD/backups:/in" alpine \
+  tar xzf /in/findhome-media-20260807.tar.gz -C /media
+```
+
+Files are content-addressed, so restoring an old archive over a newer volume is
+safe — the paths either already match or are simply added.
+
 ---
 
 ## Everyday commands
@@ -847,6 +1171,10 @@ make scrape-now    run the scraper now in the background
 make scrape-status last run's outcome per source
 make doctor        probe every portal and report what is broken and why
 make photos        fetch galleries for listings stored with only a cover photo
+make photos-stats  photos per listing, per source
+make mirror        download the photo files to the local mirror
+make media-status  mirror size, budget, and what is safe to purge
+make media-clean   delete untouched dead listings and orphaned photo files
 make seed          load demo data
 make backup        dump the database
 make psql          open a SQL prompt
@@ -1054,10 +1382,33 @@ Everything is set in `.env`. Full annotated list in
 | `WHATSAPP_PROVIDER` | *(empty)* | `webhook` / `cloud` / `callmebot`. Empty disables alerts |
 | `ALERT_MAX_AGE_HOURS` | `48` | Older listings are marked seen rather than announced |
 | `PHOTOS_ENABLED` | `true` | Open listing pages to collect the rest of the gallery |
-| `PHOTOS_MAX_PER_RUN` | `60` | One page load each; this is the budget per run |
-| `PHOTOS_MIN_IMAGES` | `3` | Listings at or above this are left alone |
-| `PHOTOS_DELAY_MS` | `1200` | Politeness delay between listing pages |
+| `PHOTOS_MAX_PER_RUN` | `200` | One page load each; this is the budget per run |
+| `PHOTOS_MIN_IMAGES` | `0` | `0` = visit every listing once; `N` skips those with N photos |
+| `PHOTOS_MAX_PER_LISTING` | `0` | `0` = store every photo found |
+| `PHOTOS_DELAY_MS` | `900` | Politeness delay between listing pages |
+| `PHOTOS_SETTLE_MS` | `1200` | How long to let a lazy carousel finish after scrolling |
 | `PHOTOS_TIMEOUT_MS` | `30000` | Navigation timeout per listing page |
+| `PHOTOS_MIRROR` | `true` | Download photo files to the shared `media` volume |
+| `PHOTOS_MIRROR_MAX_MB` | `2048` | Hard disk ceiling; over it, low-value copies are evicted |
+| `PHOTOS_MIRROR_MAX_PER_RUN` | `400` | Downloads per run |
+| `PHOTOS_MIRROR_MAX_FILE_KB` | `4096` | Anything larger is not a listing photo |
+| `PHOTOS_MIRROR_MAX_FAILURES` | `3` | Then that URL is given up on |
+| `MEDIA_ROOT` | `/media` | Same path in both containers |
+| `CLEANUP_PURGE_DAYS` | `60` | Delete **untouched** dead listings after this; `0` disables |
+| `CLEANUP_MAX_PER_RUN` | `2000` | Listings deleted per pass |
+| `CLEANUP_ARCHIVE_KEEP` | `1` | Mirrored photos kept per closed ad; `0` keeps all |
+| `CLEANUP_ARCHIVE_DAYS` | `7` | Grace period before collapsing, since portals re-post |
+| `BCRYPT_ROUNDS` | `12` | Password hashing cost; old hashes upgrade on next sign-in |
+| `LOGIN_LOCK_THRESHOLD` | `8` | Wrong passwords in a row before the account locks |
+| `LOGIN_LOCK_MINUTES` | `15` | How long the lock holds |
+| `LOGIN_AUDIT_DAYS` | `90` | Retention for the sign-in activity list |
+| `DEDUPE_ENABLED` | `true` | Group ads for the same flat |
+| `DEDUPE_RADIUS_M` | `60` | Match radius — a building, not a block |
+| `DEDUPE_AREA_PCT` | `5` | Floor-area tolerance |
+| `COMMUTE_PROVIDER` | `none` | `osrm` (self-hosted) or `ors` (free key) |
+| `COMMUTE_ENDPOINT` | *(empty)* | OSRM base URL |
+| `COMMUTE_API_KEY` | *(empty)* | OpenRouteService key |
+| `ITBI_PCT` / `DEED_PCT` / `REGISTRY_PCT` | `3` / `1` / `0.8` | Purchase-cost estimate. **ITBI is municipal — check yours** |
 | `GEOCODE_ENABLED` | `false` | Resolve missing coordinates for the map |
 | `GEOCODE_CONTACT` | *(empty)* | Email in the User-Agent. Required by Nominatim's policy |
 | `GEOCODE_MAX_PER_RUN` | `25` | Keeps within the 1 req/s policy over time |

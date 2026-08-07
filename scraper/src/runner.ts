@@ -6,6 +6,10 @@ import { logger } from './logger.js';
 import { getParser, mayNeedBrowser } from './parsers/index.js';
 import { deactivateStale, persistListings } from './persist.js';
 import { geocodePending } from './geocode.js';
+import { clusterDuplicates } from './dedupe.js';
+import { computeCommutes } from './commute.js';
+import { mirrorPending } from './media.js';
+import { runCleanup } from './cleanup.js';
 import { backfillPhotos } from './photos.js';
 import { runAlerts } from './notify/alerts.js';
 import { buildSearchTargets, describeTarget } from './targets.js';
@@ -168,11 +172,25 @@ export async function runScrape(sources: PropertySource[] = config.sources): Pro
     running = false;
   }
 
-  // Coordinates before alerts, both after the catalogue is written. Neither is
-  // ever allowed to fail the run: a rate-limited geocoder or a dead WhatsApp
-  // channel is not a failed scrape.
+  /**
+   * Everything after the catalogue is written, in dependency order. None of it is
+   * ever allowed to fail the run: a rate-limited geocoder, a CDN that refuses a
+   * photo, a full disk or a dead WhatsApp channel is not a failed scrape.
+   *
+   *   geocode  coordinates for the portals that publish none
+   *   dedupe   group ads for the same flat — needs the coordinates above
+   *   commute  route to the workspace's address — needs them too
+   *   mirror   download photo files (needs no browser — plain HTTP)
+   *   cleanup  after the mirror, so the disk budget and the orphan sweep both
+   *            see the files this run just created
+   *   alerts   last, so a message only ever describes a listing that is already
+   *            fully readable in the app: photos, commute, duplicates and all
+   */
   await geocodePending().catch((err) => log.error('geocoding failed', err));
-  // Alerts last, so they only ever describe listings already readable in the app.
+  await clusterDuplicates().catch((err) => log.error('duplicate clustering failed', err));
+  await computeCommutes().catch((err) => log.error('commute routing failed', err));
+  await mirrorPending().catch((err) => log.error('photo mirroring failed', err));
+  await runCleanup().catch((err) => log.error('cleanup failed', err));
   await runAlerts().catch((err) => log.error('alert dispatch failed', err));
 
   const finishedAt = new Date();

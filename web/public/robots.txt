@@ -1,3 +1,24 @@
-# FindHome is a private, self-hosted app. Nothing here should be indexed.
+# FindHome.
+#
+# The public pages (/ and /imovel/*) are browsable without an account; everything
+# else is a private household workspace and must never be indexed.
+#
+# Left as Disallow-all on purpose, even though / is now public. Two reasons:
+#
+#   1. The listings are not ours. They are ads collected from ZAP, OLX,
+#      QuintoAndar and others, and inviting search engines to index a copy of
+#      somebody else's catalogue is a different thing from letting a person
+#      browse it — and a much easier one to receive a letter about.
+#   2. Nothing here benefits from search traffic. The people who should find this
+#      are the ones you send the link to.
+#
+# If you decide otherwise, replace the block below with the commented version and
+# read the Security notes in the README first.
 User-agent: *
 Disallow: /
+
+# --- Opt in to indexing the public feed only -------------------------------
+# User-agent: *
+# Allow: /$
+# Allow: /imovel/
+# Disallow: /

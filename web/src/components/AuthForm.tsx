@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import clsx from 'clsx';
+import { assessPassword, MIN_LENGTH, passwordScore } from '@/lib/password';
 import { useT } from './LocaleProvider';
 
 type Mode = 'login' | 'register';
@@ -28,32 +30,127 @@ export default function AuthForm({
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+
+  /**
+   * Set once the password is accepted and the account has a second factor. Holding
+   * it flips the form to the code step — the password is never kept, and the
+   * challenge expires in five minutes on the server whatever the browser does.
+   */
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+
+  /** Only same-origin relative paths — never an attacker-supplied absolute URL. */
+  const destination = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  // Full navigation, so the server components pick up the new cookie.
+  const land = () => {
+    window.location.href = destination;
+  };
+
+  const strength = mode === 'register' ? passwordScore(password) : 0;
+  const verdict = mode === 'register' && password ? assessPassword(password) : null;
+
+  async function post(url: string, body: unknown) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? t.auth.genericError);
+    return data as Record<string, unknown>;
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError(null);
 
-    const form = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(form.entries());
+    try {
+      const form = new FormData(event.currentTarget);
+      const payload = Object.fromEntries(form.entries());
+      const data = await post(`/api/auth/${mode}`, payload);
 
-    const res = await fetch(`/api/auth/${mode}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+      // Password was right, but the account has 2FA. No cookie has been set.
+      if (data.needsTotp && typeof data.challenge === 'string') {
+        setChallenge(data.challenge);
+        setPending(false);
+        return;
+      }
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? t.auth.genericError);
+      land();
+    } catch (err) {
+      setError((err as Error).message);
       setPending(false);
-      return;
     }
+  }
 
-    // Full navigation so the server components pick up the new cookie.
-    // Only same-origin relative paths — never redirect to an attacker-supplied
-    // absolute URL from ?next=.
-    window.location.href = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  async function onVerify(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError(null);
+
+    try {
+      await post('/api/auth/totp', { challenge, code });
+      land();
+    } catch (err) {
+      setError((err as Error).message);
+      setCode('');
+      setPending(false);
+    }
+  }
+
+  /** ------------------------------------------------------------------ */
+  /** Step two: the code.                                                  */
+  /** ------------------------------------------------------------------ */
+  if (challenge) {
+    return (
+      <form onSubmit={onVerify} className="space-y-5">
+        <div>
+          <label className="label" htmlFor="code">
+            {t.auth.totpTitle}
+          </label>
+          <input
+            id="code"
+            name="code"
+            className="input text-center font-mono text-2xl tracking-[0.4em]"
+            // `one-time-code` is what makes iOS and Android offer the code from
+            // the SMS/authenticator sheet instead of the password manager.
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            autoFocus
+            required
+            maxLength={20}
+            placeholder="000000"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+          <p className="mt-1.5 text-xs text-ink-500">{t.auth.totpHint}</p>
+        </div>
+
+        {error && (
+          <p className="well-sm px-4 py-3 text-sm font-medium text-danger" role="alert">
+            {error}
+          </p>
+        )}
+
+        <button type="submit" className="btn-primary w-full !py-3" disabled={pending || code.length < 6}>
+          {pending ? t.auth.submitting : t.auth.totpVerify}
+        </button>
+
+        <button
+          type="button"
+          className="btn-ghost w-full"
+          onClick={() => {
+            setChallenge(null);
+            setCode('');
+            setError(null);
+          }}
+        >
+          {t.auth.totpBack}
+        </button>
+      </form>
+    );
   }
 
   const registerHref = invitedCode ? `/register?invite=${invitedCode}` : '/register';
@@ -94,10 +191,42 @@ export default function AuthForm({
           type="password"
           className="input"
           required
-          minLength={mode === 'register' ? 8 : 1}
+          minLength={mode === 'register' ? MIN_LENGTH : 1}
           autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+          value={mode === 'register' ? password : undefined}
+          onChange={mode === 'register' ? (e) => setPassword(e.target.value) : undefined}
         />
-        {mode === 'register' && <p className="mt-1.5 text-xs text-ink-500">{t.auth.passwordHint}</p>}
+
+        {/* Live feedback, using the SAME function the server validates with, so
+            the form can never accept something the API then rejects. */}
+        {mode === 'register' && (
+          <>
+            <div
+              className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-sunken"
+              role="progressbar"
+              aria-valuenow={strength}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={t.auth.passwordStrength}
+            >
+              <div
+                className={clsx(
+                  'h-full rounded-full transition-all duration-300',
+                  strength < 40 ? 'bg-danger' : strength < 70 ? 'bg-warning' : 'bg-brand-500',
+                )}
+                style={{ width: `${Math.max(4, strength)}%` }}
+              />
+            </div>
+            <p
+              className={clsx(
+                'mt-1.5 text-xs',
+                verdict && !verdict.ok ? 'text-warning' : 'text-ink-500',
+              )}
+            >
+              {verdict && !verdict.ok ? verdict.reason : t.auth.passwordHint}
+            </p>
+          </>
+        )}
       </div>
 
       {mode === 'register' && (
@@ -126,7 +255,14 @@ export default function AuthForm({
         </p>
       )}
 
-      <button type="submit" className="btn-primary w-full !py-3" disabled={pending}>
+      <button
+        type="submit"
+        className="btn-primary w-full !py-3"
+        // Blocked on the client's own verdict, so a rejected password is caught
+        // before a round trip. The server checks again regardless — this is
+        // convenience, not the control.
+        disabled={pending || (mode === 'register' && verdict !== null && !verdict.ok)}
+      >
         {pending ? t.auth.submitting : mode === 'login' ? t.auth.signIn : t.auth.register}
       </button>
 

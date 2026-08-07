@@ -208,7 +208,8 @@ export function mapCard(card: Card, target: SearchTarget): RawListing | null {
         .map((i) => clean(i, 500))
         .filter((i) => /^https?:/.test(i) && /imovelwebcdn|navent/i.test(i) && !/logo|sprite|icon/i.test(i))
         .map(upgradeImage),
-    ).slice(0, 12),
+      // Uncapped: the ceiling is applied once, in persist.ts.
+    ),
     amenities: [],
     petFriendly: detectPetPolicy(description),
     listingType: target.listingType,

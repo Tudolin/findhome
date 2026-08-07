@@ -24,21 +24,48 @@ type FormState = {
   minSqm: number;
   petFriendly: boolean;
   amenities: string[];
+  commuteAddress: string;
+  commuteMode: 'driving' | 'cycling' | 'walking';
+  maxCommuteMin: number;
   alertsEnabled: boolean;
   alertWhatsapp: string;
   alertMaxPerRun: number;
 };
 
-const PRICE_CEILING = 20000;
+/**
+ * Budget controls, per listing type.
+ *
+ * A single rent-shaped slider is what made Buy mode unusable: it topped out at
+ * R$ 20.000 in R$ 100 steps, so a purchase budget could not be expressed at all —
+ * and a profile switched to Buy silently kept a rent ceiling that then matched no
+ * listing in the country. Buy gets a range that reaches R$ 3.000.000 in
+ * R$ 10.000 steps, and both modes get a text box so an exact figure can just be
+ * typed.
+ */
+const BUDGET: Record<'RENT' | 'SALE', { ceiling: number; step: number; presets: number[]; defaultMax: number }> = {
+  RENT: {
+    ceiling: 20_000,
+    step: 100,
+    presets: [1500, 2000, 2500, 3000, 4000, 5000, 7000, 10_000],
+    defaultMax: 5000,
+  },
+  SALE: {
+    ceiling: 3_000_000,
+    step: 10_000,
+    presets: [200_000, 350_000, 500_000, 650_000, 800_000, 1_000_000, 1_500_000, 2_000_000],
+    defaultMax: 600_000,
+  },
+};
 
 function initial(profile: PreferenceProfile | null): FormState {
+  const listingType = (profile?.listingType as 'RENT' | 'SALE') ?? 'RENT';
   return {
     city: profile?.city ?? '',
     state: profile?.state ?? '',
     neighborhoods: profile?.neighborhoods ?? [],
-    listingType: (profile?.listingType as 'RENT' | 'SALE') ?? 'RENT',
+    listingType,
     minPrice: profile?.minPrice ?? 0,
-    maxPrice: profile?.maxPrice ?? 5000,
+    maxPrice: profile?.maxPrice ?? BUDGET[listingType].defaultMax,
     includeCondoInMaxPrice: profile?.includeCondoInMaxPrice ?? true,
     minBedrooms: profile?.minBedrooms ?? 0,
     minBathrooms: profile?.minBathrooms ?? 0,
@@ -46,6 +73,9 @@ function initial(profile: PreferenceProfile | null): FormState {
     minSqm: profile?.minSqm ?? 0,
     petFriendly: profile?.petFriendly ?? false,
     amenities: profile?.amenities ?? [],
+    commuteAddress: profile?.commuteAddress ?? '',
+    commuteMode: (profile?.commuteMode as FormState['commuteMode']) ?? 'driving',
+    maxCommuteMin: profile?.maxCommuteMin ?? 0,
     alertsEnabled: profile?.alertsEnabled ?? false,
     alertWhatsapp: profile?.alertWhatsapp ?? '',
     alertMaxPerRun: profile?.alertMaxPerRun ?? 5,
@@ -85,6 +115,35 @@ export default function PreferencesForm({
     setForm((f) => ({ ...f, [key]: value }));
     setSaved(false);
   };
+
+  const budget = BUDGET[form.listingType];
+  const forSale = form.listingType === 'SALE';
+
+  /**
+   * Switching rent <-> buy has to move the budget with it.
+   *
+   * Leaving it alone is what made Buy look broken: the profile kept a R$ 5.000
+   * ceiling, which as a purchase price matches nothing anywhere, and the feed
+   * came back empty with no hint as to why. A budget that is out of range for the
+   * new mode is replaced by that mode's default; one that already makes sense
+   * (someone typed R$ 700.000 and then toggled twice) is left alone.
+   */
+  function switchListingType(type: 'RENT' | 'SALE') {
+    if (type === form.listingType) return;
+    const next = BUDGET[type];
+    const plausible = form.maxPrice > 0 && form.maxPrice <= next.ceiling && form.maxPrice >= next.presets[0] / 4;
+
+    setForm((f) => ({
+      ...f,
+      listingType: type,
+      maxPrice: plausible ? f.maxPrice : next.defaultMax,
+      minPrice: plausible ? f.minPrice : 0,
+      // "Include the condo fee in the ceiling" is a rent-only idea — there is
+      // nothing to include in an asking price.
+      includeCondoInMaxPrice: type === 'RENT' ? f.includeCondoInMaxPrice : false,
+    }));
+    setSaved(false);
+  }
 
   /** Slugs already chosen, so suggestions and duplicates agree with the server. */
   const chosenSlugs = useMemo(() => new Set(form.neighborhoods.map(locationSlug)), [form.neighborhoods]);
@@ -133,6 +192,9 @@ export default function PreferencesForm({
         minPrice: form.minPrice || null,
         maxPrice: form.maxPrice || null,
         alertWhatsapp: form.alertWhatsapp.trim() || null,
+        commuteAddress: form.commuteAddress.trim() || null,
+        // 0 in the select means "do not filter on it"; the column is nullable.
+        maxCommuteMin: form.maxCommuteMin || null,
       });
       setSaved(true);
       startTransition(() => router.refresh());
@@ -142,6 +204,44 @@ export default function PreferencesForm({
       setSaving(false);
     }
   }
+
+  /**
+   * A budget bound: slider for coarse movement, number box for the exact figure.
+   *
+   * The box is not a nicety. The slider's range is the listing type's whole
+   * plausible span, so on Buy one pixel is worth several thousand reais and
+   * "R$ 640.000" is not reachable by dragging. Typing it is.
+   */
+  const budgetField = (key: 'minPrice' | 'maxPrice', label: string, emptyLabel: string, suffix?: string) => (
+    <div>
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="tabular-nums text-ink-600">
+          {form[key] ? money(form[key]) : emptyLabel}
+          {suffix && <span className="ml-1 text-xs text-ink-400">{suffix}</span>}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={budget.ceiling}
+        step={budget.step}
+        value={Math.min(form[key], budget.ceiling)}
+        onChange={(e) => set(key, Number(e.target.value))}
+      />
+      <input
+        type="number"
+        className="input mt-2 !py-1.5 text-sm"
+        min={0}
+        step={budget.step}
+        inputMode="numeric"
+        placeholder={emptyLabel}
+        aria-label={label}
+        value={form[key] || ''}
+        onChange={(e) => set(key, Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+      />
+    </div>
+  );
 
   const numberField = (label: string, key: 'minBedrooms' | 'minBathrooms' | 'minParkingSpots', max = 6) => (
     <div>
@@ -206,7 +306,7 @@ export default function PreferencesForm({
               <button
                 key={type}
                 type="button"
-                onClick={() => set('listingType', type)}
+                onClick={() => switchListingType(type)}
                 className={clsx(
                   'tag-toggle !min-w-[3.25rem] !justify-center !px-3',
                   form.listingType === type && 'tag-toggle-on',
@@ -273,60 +373,66 @@ export default function PreferencesForm({
       </div>
 
       <div className="card p-6">
-        <h2 className="mb-1 text-sm font-semibold">{t.preferences.budget}</h2>
+        <h2 className="mb-1 text-sm font-semibold">
+          {forSale ? t.preferences.budgetSale : t.preferences.budget}
+        </h2>
         <p className="mb-4 text-xs text-ink-500">
-          {form.includeCondoInMaxPrice ? t.preferences.budgetAllIn : t.preferences.budgetRentOnly}
+          {forSale
+            ? t.preferences.budgetSaleHint
+            : form.includeCondoInMaxPrice
+              ? t.preferences.budgetAllIn
+              : t.preferences.budgetRentOnly}
         </p>
 
-        <label className="well mb-5 flex cursor-pointer items-start gap-3 p-4">
-          <input
-            type="checkbox"
-            className="mt-0.5 shrink-0"
-            checked={form.includeCondoInMaxPrice}
-            onChange={(e) => set('includeCondoInMaxPrice', e.target.checked)}
-          />
-          <span className="text-sm">
-            <span className="font-medium">{t.preferences.includeCondo}</span>
-            <span className="block text-xs text-ink-500">{t.preferences.includeCondoHint}</span>
-          </span>
-        </label>
+        {/* Rent only: an asking price has no monthly fees to fold in. */}
+        {!forSale && (
+          <label className="well mb-5 flex cursor-pointer items-start gap-3 p-4">
+            <input
+              type="checkbox"
+              className="mt-0.5 shrink-0"
+              checked={form.includeCondoInMaxPrice}
+              onChange={(e) => set('includeCondoInMaxPrice', e.target.checked)}
+            />
+            <span className="text-sm">
+              <span className="font-medium">{t.preferences.includeCondo}</span>
+              <span className="block text-xs text-ink-500">{t.preferences.includeCondoHint}</span>
+            </span>
+          </label>
+        )}
 
         <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <div className="mb-2 flex justify-between text-sm">
-              <span className="font-medium">{t.preferences.minimum}</span>
-              <span className="tabular-nums text-ink-600">
-                {form.minPrice ? money(form.minPrice) : t.preferences.noMinimum}
-              </span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={PRICE_CEILING}
-              step={100}
-              value={form.minPrice}
-              onChange={(e) => set('minPrice', Number(e.target.value))}
-            />
-          </div>
+          {budgetField('minPrice', t.preferences.minimum, t.preferences.noMinimum)}
+          {budgetField(
+            'maxPrice',
+            t.preferences.maximum,
+            t.preferences.noMaximum,
+            forSale ? undefined : form.includeCondoInMaxPrice ? t.preferences.allIn : t.preferences.rentOnly,
+          )}
+        </div>
 
-          <div>
-            <div className="mb-2 flex justify-between text-sm">
-              <span className="font-medium">{t.preferences.maximum}</span>
-              <span className="tabular-nums text-ink-600">
-                {form.maxPrice ? money(form.maxPrice) : t.preferences.noMaximum}
-                <span className="ml-1 text-xs text-ink-400">
-                  {form.includeCondoInMaxPrice ? t.preferences.allIn : t.preferences.rentOnly}
-                </span>
-              </span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={PRICE_CEILING}
-              step={100}
-              value={form.maxPrice}
-              onChange={(e) => set('maxPrice', Number(e.target.value))}
-            />
+        {/* One tap for the common budgets. The slider alone is fine for rent and
+            hopeless for a purchase: at R$ 10.000 a step, hitting R$ 640.000 on a
+            3-million-wide track is not something a mouse can do. */}
+        <div className="mt-4">
+          <p className="label">{t.preferences.quickCeilings}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {budget.presets.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => set('maxPrice', value)}
+                className={clsx('tag-toggle', form.maxPrice === value && 'tag-toggle-on')}
+              >
+                {money(value)}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => set('maxPrice', 0)}
+              className={clsx('tag-toggle', form.maxPrice === 0 && 'tag-toggle-on')}
+            >
+              {t.preferences.noMaximum}
+            </button>
           </div>
         </div>
 
@@ -385,6 +491,65 @@ export default function PreferencesForm({
             ))}
           </div>
         </div>
+      </div>
+
+      {/* The filter that actually decides where people live, and the one no
+          portal offers. Off unless an address is entered — routing needs a
+          provider, and an empty box is how you say "I don't care". */}
+      <div className="card p-6">
+        <h2 className="mb-1 text-sm font-semibold">{t.preferences.commute}</h2>
+        <p className="mb-4 text-xs text-ink-500">{t.preferences.commuteHint}</p>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="sm:col-span-2">
+            <label className="label" htmlFor="commuteAddress">
+              {t.preferences.commuteAddress}
+            </label>
+            <input
+              id="commuteAddress"
+              className="input"
+              placeholder="Av. Paulista 1000, São Paulo"
+              value={form.commuteAddress}
+              onChange={(e) => set('commuteAddress', e.target.value)}
+            />
+            <p className="mt-1 text-[11px] text-ink-400">{t.preferences.commuteAddressHint}</p>
+          </div>
+
+          <div>
+            <label className="label" htmlFor="commuteMode">
+              {t.preferences.commuteMode}
+            </label>
+            <select
+              id="commuteMode"
+              className="input"
+              value={form.commuteMode}
+              onChange={(e) => set('commuteMode', e.target.value as FormState['commuteMode'])}
+            >
+              <option value="driving">{t.preferences.driving}</option>
+              <option value="cycling">{t.preferences.cycling}</option>
+              <option value="walking">{t.preferences.walking}</option>
+            </select>
+          </div>
+        </div>
+
+        {form.commuteAddress.trim() && (
+          <div className="mt-4">
+            <div className="mb-2 flex justify-between text-sm">
+              <span className="font-medium">{t.preferences.maxCommute}</span>
+              <span className="tabular-nums text-ink-600">
+                {form.maxCommuteMin ? `${form.maxCommuteMin} min` : t.filters.any}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={90}
+              step={5}
+              value={form.maxCommuteMin}
+              onChange={(e) => set('maxCommuteMin', Number(e.target.value))}
+            />
+          </div>
+        )}
       </div>
 
       <div className="card p-6">

@@ -52,10 +52,17 @@ export const demoParser: Parser = {
         const seed = hash(`${target.city}|${neighborhood}|${n}`);
         const bedrooms = Math.max(target.minBedrooms, 1 + (seed % 3));
         const sqm = Math.max(target.minSqm, 35 + (seed % 90));
-        const floor = target.minPrice ?? 1800;
-        const ceiling = target.maxPrice ?? floor + 4000;
-        const rentPrice = floor + (seed % Math.max(1, ceiling - floor));
-        const condoFee = Math.round(rentPrice * 0.2);
+        // Prices have to be on the right scale for the mode being tested: a Buy
+        // run that synthesised R$ 1.800 "sale" listings would make the purchase
+        // filters look broken when they are not.
+        const forSale = target.listingType === 'SALE';
+        const floor = target.minPrice ?? (forSale ? 250_000 : 1800);
+        const ceiling = target.maxPrice ?? floor + (forSale ? 600_000 : 4000);
+        const step = forSale ? 1000 : 1;
+        const span = Math.max(1, Math.floor((ceiling - floor) / step));
+        const price = floor + (seed % span) * step;
+        // A sale's condo fee is a monthly running cost, not a slice of the price.
+        const condoFee = forSale ? 300 + (seed % 900) : Math.round(price * 0.2);
         const externalId = `demo-${seed.toString(36)}`;
 
         listings.push({
@@ -67,9 +74,11 @@ export const demoParser: Parser = {
           neighborhood,
           city: target.city,
           state: target.state ?? null,
-          rentPrice,
+          // `rentPrice` is the headline price whatever the type — monthly rent,
+          // or the asking price. See normalize() in persist.ts.
+          rentPrice: price,
           condoFee,
-          taxFee: Math.round(rentPrice * 0.04),
+          taxFee: forSale ? Math.round(price * 0.01 / 12) : Math.round(price * 0.04),
           bedrooms,
           bathrooms: 1 + (seed % 2),
           parkingSpots: seed % 3,

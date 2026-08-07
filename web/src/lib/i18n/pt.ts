@@ -18,6 +18,7 @@ export const pt: Dict = {
     visits: 'Visitas',
     coop: 'Central da Party',
     preferences: 'Preferências',
+    security: 'Segurança',
     signOut: 'Sair',
     workspaces: 'Espaços',
     soloMode: 'Modo individual',
@@ -89,6 +90,8 @@ export const pt: Dict = {
     petsYes: 'Aceita pet (ou não informado)',
     petsNo: 'Não aceita pet',
     withPhotos: 'Com fotos',
+    droppedOnly: 'Baixou de preço',
+    maxCommute: 'Trajeto até',
     newWithin: 'Encontrados nos',
     anyTime: 'Qualquer data',
     lastDays: (days: number) => (days === 1 ? 'últimas 24 horas' : `últimos ${days} dias`),
@@ -112,6 +115,9 @@ export const pt: Dict = {
       ppsqm_asc: 'Melhor preço por m²',
       rating_desc: 'Sua nota',
       reviewed_desc: 'Avaliados recentemente',
+      drop_desc: 'Maior queda de preço',
+      sitting: 'Mais tempo no ar',
+      commute_asc: 'Mais perto do trabalho',
     },
     statuses: {
       ALL: 'Todos',
@@ -144,8 +150,9 @@ export const pt: Dict = {
       avgRating: 'Nota média',
       pinned: 'Fixados',
       visits: 'Próximas visitas',
-      cheapest: 'Mais barato',
+      cheapest: 'Mais barato ativo',
       avgPrice: 'Média',
+      archived: 'Encerrados',
     },
     emptyTitle: 'Você ainda não avaliou nenhum imóvel.',
     emptyBody: 'Dê uma nota, marque como Interessado ou fixe um imóvel e ele aparece aqui. Comece em',
@@ -158,6 +165,22 @@ export const pt: Dict = {
     photos: (n: number) => `${n} fotos`,
     perMonth: '/mês total',
     breakdown: (rent: string, fees: string) => `${rent} aluguel + ${fees} taxas`,
+    /** Venda: o valor de destaque é único, não mensal. */
+    askingPrice: 'à vista',
+    saleMonthly: (monthly: string) => `+ ${monthly}/mês de condomínio e IPTU`,
+    saleNoMonthly: 'condomínio e IPTU não informados',
+    /** A página do anúncio devolveu 404/410 — prova direta de que saiu do ar. */
+    adClosed: 'anúncio encerrado',
+    /** Só parou de aparecer nos resultados, que é um sinal mais fraco. */
+    noLongerListed: 'fora dos resultados',
+    lastAdvertised: 'último valor',
+    archivedNoPhotos: 'Fotos não disponíveis',
+    photosLost: (n: number) => `mais ${n} foto${n === 1 ? '' : 's'} não pôde ser guardada`,
+    originalGone: 'Anúncio ✕',
+    originalGoneHint: 'O anúncio foi encerrado — este link provavelmente não leva a nada.',
+    commute: (min: number) => `${min} min`,
+    daysListed: (days: number) => (days === 0 ? 'anunciado hoje' : `${days} dias no ar`),
+    priceMovesTitle: (n: number) => `O preço mudou ${n} ${n === 1 ? 'vez' : 'vezes'} desde que apareceu`,
     bed: 'dorm.',
     bath: 'banh.',
     parking: 'vaga(s)',
@@ -215,8 +238,12 @@ export const pt: Dict = {
     addNeighborhood: 'Adicionar um bairro…',
     add: 'Adicionar',
     budget: 'Orçamento',
+    budgetSale: 'Orçamento de compra',
+    budgetSaleHint:
+      'Comparado com o valor do imóvel. Condomínio e IPTU aparecem em cada anúncio, mas não entram na conta — você paga esses todo mês, depois de comprar.',
     budgetAllIn: 'O teto é comparado com aluguel + condomínio + IPTU — o que realmente sai da sua conta.',
     budgetRentOnly: 'O teto é comparado apenas com o aluguel anunciado.',
+    quickCeilings: 'Tetos comuns',
     includeCondo: 'Calcular o teto como (Aluguel + Condomínio + IPTU)',
     includeCondoHint: 'Desligue para comparar só com o aluguel, ignorando as taxas mensais.',
     minimum: 'Mínimo',
@@ -241,6 +268,17 @@ export const pt: Dict = {
     everyMember: ' — todos os membros veem este filtro',
     scrapeHint: 'Salvar aqui muda o que o scraper procura na próxima rodada. Para buscar agora, use',
     onTheFeed: 'no feed de descobertas.',
+    commute: 'Trajeto',
+    commuteHint:
+      'Para onde você precisa ir quase todo dia? Os imóveis passam a mostrar quanto tempo leva, e dá para filtrar e ordenar por isso.',
+    commuteAddress: 'Endereço',
+    commuteAddressHint:
+      'Deixe vazio para desligar. Precisa de um provedor de rotas — veja COMMUTE_PROVIDER no README.',
+    commuteMode: 'De',
+    driving: 'Carro',
+    cycling: 'Bike',
+    walking: 'A pé',
+    maxCommute: 'No máximo',
   },
 
   alerts: {
@@ -275,6 +313,11 @@ export const pt: Dict = {
     haveAccount: 'Já tem uma conta?',
     submitting: 'Aguarde…',
     genericError: 'Algo deu errado',
+    passwordStrength: 'Força da senha',
+    totpTitle: 'Código do seu aplicativo autenticador',
+    totpHint: 'Seis dígitos, ou um dos seus códigos de recuperação.',
+    totpVerify: 'Verificar',
+    totpBack: '← Usar outra conta',
   },
 
   property: {
@@ -285,7 +328,34 @@ export const pt: Dict = {
     bathrooms: 'Banheiros',
     parking: 'Vagas',
     area: 'Área',
+    adClosed: 'Este anúncio foi encerrado — o portal não tem mais página para ele.',
+    noLongerListed: 'Este imóvel parou de aparecer nos resultados do portal.',
+    adClosedOn: (when: string) => `Percebemos ${when}.`,
+    /**
+     * De propósito com ressalva. O app sabe que o anúncio encerrou; ele não sabe
+     * que o imóvel foi alugado, e afirmar isso seria inventar um dado que não temos.
+     */
+    archivedMeaning:
+      'Normalmente significa que foi alugado ou vendido, mas também pode ser que o anunciante apenas tenha retirado. Sua nota, anotações e prós/contras ficam guardados de qualquer forma.',
+    archivedKept: (n: number) =>
+      n === 1
+        ? 'Uma foto foi guardada antes do anúncio encerrar, para você ainda reconhecer o imóvel.'
+        : `${n} fotos foram guardadas antes do anúncio encerrar.`,
+    archivedNoKept: 'Nenhuma foto foi guardada antes do anúncio encerrar, então não há o que mostrar.',
     priceBreakdown: 'Composição do valor',
+    saleBreakdown: 'Valor e custos de manutenção',
+    askingPrice: 'Valor do imóvel',
+    afterBuying: 'O que continua pagando',
+    monthlyAfter: 'Mensal depois da compra',
+    pricePerSqm: 'Preço por m²',
+    feesUnknown: 'Este portal não publica condomínio nem IPTU, por isso os dois aparecem zerados.',
+    entryCost: 'Custo real de compra',
+    entryCostHint: 'O que realmente sai da sua conta — o valor anunciado mais os impostos e taxas que portal nenhum mostra.',
+    itbi: 'ITBI',
+    deed: 'Escritura',
+    registry: 'Registro',
+    entryTotal: 'Total de entrada',
+    feesOnly: 'Impostos e taxas',
     rent: 'Aluguel',
     condoFee: 'Condomínio',
     taxes: 'Impostos (IPTU etc.)',
@@ -356,6 +426,111 @@ export const pt: Dict = {
       'Quem tiver o link atual pode ver sua agenda. Gerar um novo derruba as assinaturas que já existem.',
     rotateConfirm: 'Trocar o link? Os calendários já inscritos param de atualizar.',
     pastDate: 'Esse horário já passou.',
+  },
+
+  compare: {
+    title: 'Comparar',
+    subtitle:
+      'Dois a quatro lado a lado. O melhor número de cada linha fica destacado — não existe uma nota única de vencedor, porque o trade-off é justamente o motivo de você estar comparando.',
+    property: 'Imóvel',
+    commute: 'Trajeto',
+    listedFor: 'Tempo no ar',
+    priceMove: 'Variação de preço',
+    noMove: 'sem mudança',
+    entryCost: 'Custo real de compra',
+    upfront: 'Entrada',
+    emptyTitle: 'Escolha pelo menos dois imóveis para comparar.',
+    emptyBody: 'Abra Seus apartamentos, marque os que estão na disputa e clique em Comparar.',
+    rateHint: 'Dê notas e elas aparecem aqui também.',
+    costDisclaimer:
+      'Os custos de compra são estimativa: o ITBI é municipal e a alíquota muda de cidade para cidade, e a escritura é dispensada quando a compra é financiada. Confirme no cartório antes de fechar o orçamento.',
+    select: 'Comparar',
+    selected: (n: number) => `${n} selecionado${n === 1 ? '' : 's'}`,
+    clear: 'Limpar seleção',
+    pickOneMore: 'Escolha mais um',
+  },
+
+  security: {
+    title: 'Segurança',
+    subtitle:
+      'Verificação em duas etapas, os dispositivos conectados nesta conta, e todas as tentativas de login feitas contra ela.',
+    confirmPassword: 'Sua senha',
+    confirmPasswordHint:
+      'Toda ação desta página pede a senha. É isso que impede alguém no seu notebook destravado de desligar a verificação em duas etapas e te trancar para fora.',
+    twoFactor: 'Verificação em duas etapas',
+    twoFactorHint: 'Um código de seis dígitos no celular, além da senha.',
+    on: 'Ativa',
+    off: 'Desativada',
+    enable2fa: 'Configurar duas etapas',
+    disable2fa: 'Desligar duas etapas',
+    confirmDisable: 'Desligar a verificação em duas etapas desta conta?',
+    scanHint:
+      'Adicione no Google Authenticator, Authy, 1Password ou Bitwarden — cole o link, ou digite o segredo à mão.',
+    secret: 'Segredo',
+    otpauthUri: 'Link',
+    enterCode: 'Código do aplicativo',
+    confirmEnable: 'Confirmar e ativar',
+    twoFactorOn: 'Duas etapas ativada. Guarde seus códigos de recuperação.',
+    twoFactorOff: 'Duas etapas desligada.',
+    saveCodes: 'Guarde estes códigos de recuperação agora',
+    saveCodesHint:
+      'Cada um funciona uma vez, no lugar do código do celular. Esta é a única vez que eles aparecem — não há como lê-los depois. Sem eles, perder o celular é perder a conta.',
+    recoveryLeft: (n: number) =>
+      n === 0
+        ? 'Nenhum código de recuperação sobrando. Desligue e religue as duas etapas para gerar novos.'
+        : `${n} código${n === 1 ? '' : 's'} de recuperação ${n === 1 ? 'restante' : 'restantes'}.`,
+    devices: 'Dispositivos conectados',
+    devicesHint: 'Qualquer coisa que você não reconheça, desconecte.',
+    thisDevice: 'este aqui',
+    unknownDevice: 'Dispositivo desconhecido',
+    lastUsed: (when: string) => `usado por último em ${when}`,
+    signOut: 'Desconectar',
+    signOutOthers: 'Desconectar todos os outros',
+    confirmSignOutAll: 'Desconectar todos os outros dispositivos?',
+    deviceSignedOut: 'Dispositivo desconectado.',
+    othersSignedOut: (n: number) => `${n} outro${n === 1 ? '' : 's'} dispositivo${n === 1 ? '' : 's'} desconectado${n === 1 ? '' : 's'}.`,
+    changePassword: 'Trocar a senha',
+    newPassword: 'Senha nova',
+    lastChanged: (when: string) => `Trocada pela última vez em ${when}.`,
+    neverChanged: 'Nunca trocada.',
+    changeSignsOut: 'Trocar a senha desconecta todos os outros dispositivos. Este continua conectado.',
+    passwordChanged: (n: number) => `Senha trocada. ${n} outro${n === 1 ? '' : 's'} dispositivo${n === 1 ? '' : 's'} desconectado${n === 1 ? '' : 's'}.`,
+    activity: 'Atividade recente',
+    activityHint: (threshold: number, minutes: number) =>
+      `Depois de ${threshold} senhas erradas seguidas a conta trava por ${minutes} minutos. Uma tentativa que você não reconhece significa que alguém tem o seu e-mail — troque a senha.`,
+    noActivity: 'Nada registrado ainda.',
+    succeeded: 'Entrou',
+    failed: 'Falhou',
+  },
+
+  public: {
+    headline: 'Todos os portais. Um feed. Uma decisão.',
+    subhead:
+      'ZAP, Viva Real, QuintoAndar, OLX, ImovelWeb e Chaves na Mão num lugar só — sem repetição, e sempre com o valor total. Navegue de graça; crie uma conta para salvar, comparar e decidir junto.',
+    createAccount: 'Criar conta',
+    createAccountFree: 'Criar conta grátis',
+    listingType: 'Quero',
+    anyCity: 'Todas as cidades',
+    showing: (shown: number, total: number, city: string) =>
+      city
+        ? `Mostrando ${shown} de ${total} imóveis em ${city}`
+        : `Mostrando ${shown} de ${total} imóveis`,
+    updatedTwiceDaily: 'Atualizado 2× por dia',
+    emptyTitle: 'Nada corresponde a esta busca ainda.',
+    emptyBody: 'Tente outra cidade ou uma faixa de preço mais larga.',
+    lockedTitle: (n: number) => `Mais ${n.toLocaleString('pt-BR')} imóveis`,
+    lockedBody: 'Navegar continua de graça — a conta é o que deixa você fazer algo com eles.',
+    benefitSave: 'Dar nota, separar e anotar cada apartamento',
+    benefitCompare: 'Comparar até quatro lado a lado',
+    benefitTogether: 'Procurar junto com alguém, na mesma lista',
+    benefitAlerts: 'Avisos de imóvel novo e de queda de preço',
+    alreadyHave: 'Já tem conta?',
+    registrationClosed:
+      'Este servidor não está aceitando contas novas. Peça um convite para quem administra.',
+    gatedTitle: 'Com uma conta você pode',
+    backToList: '← Voltar para a lista',
+    disclaimer:
+      'O FindHome reúne anúncios públicos de portais de terceiros e não intermedeia locação nem venda. O contato é sempre com quem anunciou, no anúncio original. Preços e informações são do anunciante e podem estar desatualizados. Marcas citadas pertencem aos seus donos.',
   },
 
   common: {

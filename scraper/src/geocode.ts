@@ -125,8 +125,54 @@ function queryFor(listing: {
   return [...new Set(parts)].join(', ');
 }
 
+/**
+ * Resolves the commute destinations saved in preference profiles.
+ *
+ * Done first and separately from the listings: there are at most a handful of
+ * them, they are the *reason* the commute pass exists, and a destination stuck
+ * behind 500 listings in the queue would mean the feature silently does nothing
+ * for days. Cleared and re-resolved whenever the address text changes (see the
+ * preferences API).
+ */
+async function geocodeCommuteAddresses(): Promise<void> {
+  const profiles = await prisma.preferenceProfile.findMany({
+    where: { commuteAddress: { not: null }, commuteLat: null },
+    select: { id: true, commuteAddress: true, city: true, state: true },
+    take: 10,
+  });
+
+  for (const profile of profiles) {
+    const address = (profile.commuteAddress ?? '').trim();
+    if (!address) continue;
+
+    // The city is appended when the address does not already name it, so "Av.
+    // Paulista 1000" resolves in the right São Paulo rather than the first one
+    // Nominatim finds.
+    const query = [address, profile.city, profile.state].filter(Boolean).join(', ');
+    const result = await lookup(query);
+    await sleep(DELAY_MS);
+
+    if (result.kind === 'hit') {
+      await prisma.preferenceProfile.update({
+        where: { id: profile.id },
+        data: { commuteLat: result.coords.latitude, commuteLng: result.coords.longitude },
+      });
+      log.info(`commute destination resolved: ${query}`);
+    } else if (result.kind === 'miss') {
+      // Left unresolved rather than stamped. Unlike a listing, there is exactly
+      // one of these and the user can see it did not work and retype it.
+      log.warn(`commute destination not found: ${query}`);
+    } else {
+      log.warn(`commute destination lookup failed: ${result.detail}`);
+      return;
+    }
+  }
+}
+
 export async function geocodePending(): Promise<void> {
   if (!ENABLED || MAX_PER_RUN === 0) return;
+
+  await geocodeCommuteAddresses().catch((err) => log.error('commute geocoding failed', err));
 
   const pending = await prisma.property.findMany({
     where: { active: true, latitude: null, geocodedAt: null },

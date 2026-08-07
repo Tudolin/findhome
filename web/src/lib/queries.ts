@@ -1,6 +1,8 @@
-import type { InteractionStatus, Prisma, PropertySource } from '@prisma/client';
+import type { InteractionStatus, ListingType, Prisma, PropertySource } from '@prisma/client';
 import { prisma } from './prisma';
 import { locationSlug } from './locations';
+import { displayImage } from './media';
+import { priceSignal } from './signals';
 import { preferenceWhere } from './matching';
 import { scoreProperty, type PartyScore } from './scoring';
 import { scopeFilter, type Workspace } from './workspace';
@@ -18,7 +20,13 @@ export type FeedSort =
   /** Your own star rating, highest first. Only meaningful on reviewed listings. */
   | 'rating_desc'
   /** Most recently reviewed by this workspace. */
-  | 'reviewed_desc';
+  | 'reviewed_desc'
+  /** Biggest price cut first — the listings whose advertiser has already blinked. */
+  | 'drop_desc'
+  /** Longest on the market, i.e. most likely to negotiate. */
+  | 'sitting'
+  /** Nearest to the workspace's commute address. */
+  | 'commute_asc';
 
 /**
  * Ad-hoc filters from a toolbar. Every one of these narrows *on top of* the saved
@@ -60,7 +68,24 @@ export type FeedFilters = {
   ratedOnly?: boolean;
   pinnedOnly?: boolean;
 
+  /** Minutes to the commute address. Listings with no route are excluded. */
+  maxCommuteMin?: number;
+  /** Only listings whose price has come down since it was first seen. */
+  droppedOnly?: boolean;
+
   listingType?: 'RENT' | 'SALE';
+
+  /**
+   * Include listings that are no longer live.
+   *
+   * Off for Discovery — a flat you cannot go and see does not belong in a feed of
+   * what is on the market. **On for "Your homes"**, and that is not a nicety: a
+   * listing you rated and then had taken down was vanishing from your own list
+   * along with your notes, pins and booked visits, with nothing to say why. Now it
+   * stays, badged "no longer listed", and its mirrored photos are still there to
+   * look at.
+   */
+  includeInactive?: boolean;
 };
 
 export type FeedOptions = FeedFilters & {
@@ -79,6 +104,10 @@ const SQL_ORDER: Partial<Record<FeedSort, Prisma.PropertyOrderByWithRelationInpu
   price_desc: { totalPrice: 'desc' },
   sqm_desc: { sqm: 'desc' },
   sqm_asc: { sqm: 'asc' },
+  // "Advertised longest" is the same column as `oldest`, named for what it is
+  // used for: finding the ads that have been sitting and are therefore negotiable.
+  sitting: { createdAt: 'asc' },
+  commute_asc: { commuteMin: { sort: 'asc', nulls: 'last' } },
 };
 
 /**
@@ -148,6 +177,24 @@ export type FeedFacets = {
   priceRange: { min: number; max: number } | null;
   sqmRange: { min: number; max: number } | null;
   maxBedrooms: number;
+  /**
+   * Whether any listing has a routed commute time.
+   *
+   * The commute filter is hidden without it. A control that can only ever return
+   * nothing — because no provider is configured, or the pass has not run — is
+   * worse than no control: it reads as a broken filter rather than an unconfigured
+   * feature.
+   */
+  hasCommuteData: boolean;
+  /**
+   * What this workspace is searching for.
+   *
+   * The toolbar needs it because a rent price control is useless for a purchase:
+   * the quick steps were 1.500–15.000 and the number input stepped by 50, which
+   * on a R$ 700.000 flat is a control you cannot operate. Everything price-shaped
+   * in the UI branches on this.
+   */
+  listingType: ListingType;
 };
 
 /**
@@ -175,15 +222,24 @@ export async function getFeedFacets(
   ws: Workspace,
   over: 'catalogue' | 'reviewed' = 'catalogue',
 ): Promise<FeedFacets> {
-  const pref = over === 'catalogue' ? await getPreferenceProfile(ws) : null;
+  // Read even for 'reviewed', which does not scope by it: the toolbar still needs
+  // `listingType` to know whether it is showing rent or purchase price controls.
+  const pref = await getPreferenceProfile(ws);
   const citySlug = pref ? pref.citySlug || locationSlug(pref.city) : '';
 
   const scope: Prisma.PropertyWhereInput =
     over === 'reviewed'
       ? { interactions: { some: { ...scopeFilter(ws), status: { not: 'DISCOVERED' } } } }
-      : { active: true, ...(citySlug ? { citySlug } : {}) };
+      : {
+          active: true,
+          ...(citySlug ? { citySlug } : {}),
+          // Rent and sale prices differ by three orders of magnitude, so mixing
+          // them would make `priceRange` — which feeds the input placeholders —
+          // read "R$ 900 to R$ 4.200.000".
+          ...(pref ? { listingType: pref.listingType } : {}),
+        };
 
-  const [sources, hoods, bounds, amenityRows] = await Promise.all([
+  const [sources, hoods, bounds, amenityRows, routed] = await Promise.all([
     prisma.property.groupBy({ by: ['source'], where: scope, _count: { source: true } }),
     prisma.property.groupBy({
       by: ['neighborhoodSlug', 'neighborhood'],
@@ -207,6 +263,9 @@ export async function getFeedFacets(
       orderBy: { createdAt: 'desc' },
       take: 4000,
     }),
+    // `findFirst`, not `count`: the only question is whether *any* exist, and on
+    // an indexed column that stops at the first row.
+    prisma.property.findFirst({ where: { ...scope, commuteMin: { not: null } }, select: { id: true } }),
   ]);
 
   const seen = new Set<string>();
@@ -249,6 +308,8 @@ export async function getFeedFacets(
         ? { min: bounds._min.sqm, max: bounds._max.sqm }
         : null,
     maxBedrooms: bounds._max.bedrooms ?? 0,
+    hasCommuteData: routed !== null,
+    listingType: pref?.listingType ?? 'RENT',
   };
 }
 
@@ -282,9 +343,11 @@ export async function getMapPins(ws: Workspace) {
         source: true,
         latitude: true,
         longitude: true,
-        // First photo only: the map shows a thumbnail per listing, and shipping
-        // twelve URLs each would bloat the payload for nothing.
+        // The map shows one thumbnail per pin, so only the cover is needed —
+        // but `images` is the whole array and the mirror index has to be matched
+        // against it by URL, so both come along and are reduced below.
         images: true,
+        photos: { where: { path: { not: null } }, select: { remoteUrl: true, path: true } },
       },
     }),
     prisma.property.count({ where: { ...where, latitude: null } }),
@@ -299,12 +362,15 @@ export async function getMapPins(ws: Workspace) {
 
   return {
     withoutCoords,
-    pins: rows.map(({ images, ...row }) => ({
+    pins: rows.map(({ images, photos, ...row }) => ({
       ...row,
       // Non-null by construction: the query filters them out.
       latitude: row.latitude as number,
       longitude: row.longitude as number,
-      image: images[0] ?? null,
+      // The mirrored copy when there is one, so a pin's thumbnail survives the
+      // portal expiring its URL — and works at all on OLX, whose CDN refuses the
+      // browser's Referer.
+      image: displayImage({ images, photos }) ?? null,
       pinned: pinnedIds.has(row.id),
     })),
   };
@@ -361,9 +427,11 @@ function applyFilters(
   if (f.listingType) where.listingType = f.listingType;
 
   // Both bounds are checked against whichever price the profile treats as the
-  // budget — all-in or bare rent — so the toolbar and the saved ceiling never
-  // disagree about what "R$ 3.000" means.
-  const priceField = pref?.includeCondoInMaxPrice === false ? 'rentPrice' : 'totalPrice';
+  // budget, so the toolbar and the saved ceiling never disagree about what
+  // "R$ 3.000" means. On a sale that is always `totalPrice`, which holds the
+  // asking price alone — `includeCondoInMaxPrice` has nothing to include.
+  const priceField =
+    pref?.listingType !== 'SALE' && pref?.includeCondoInMaxPrice === false ? 'rentPrice' : 'totalPrice';
   if (f.minPrice) tighten(where, priceField, 'gte', f.minPrice);
   if (f.maxPrice) tighten(where, priceField, 'lte', f.maxPrice);
 
@@ -402,6 +470,24 @@ function applyFilters(
 
   if (f.newWithinDays) {
     where.createdAt = { gte: new Date(Date.now() - f.newWithinDays * 86_400_000) };
+  }
+
+  /**
+   * Commute. A listing with no route (`commuteMin: null`) is excluded rather than
+   * kept — unlike the pet filter, where an unknown policy is kept because the
+   * portal simply did not say. Here the app *did* try and could not find a route,
+   * which for a commute filter is a negative answer, not a missing one.
+   */
+  if (f.maxCommuteMin) {
+    const existing = (where.commuteMin ?? {}) as Prisma.IntNullableFilter;
+    where.commuteMin = { ...existing, lte: Math.min(f.maxCommuteMin, existing.lte ?? f.maxCommuteMin), not: null };
+  }
+
+  // Something in the history is a cut. `some` rather than comparing first to last,
+  // because Prisma cannot express the latter and the former is what the badge on
+  // the card already means.
+  if (f.droppedOnly) {
+    where.priceEvents = { some: { delta: { lt: 0 } } };
   }
 }
 
@@ -460,6 +546,27 @@ function feedInclude(ws: Workspace) {
       include: { user: { select: { id: true, name: true } } },
     },
     _count: { select: { comments: { where: ownRows(ws) } } },
+    // The mirror index, lean: only the two columns `displayImages` needs, and
+    // only rows that actually have a local copy. A page of 24 listings with 20
+    // photos each is 480 rows of two short strings — cheaper than a filesystem
+    // check per image at render time, which is the alternative.
+    photos: {
+      where: { path: { not: null } },
+      select: { remoteUrl: true, path: true },
+    },
+    /**
+     * Price history, oldest first — sorted here because SQL does it for free and
+     * a per-card sort does not.
+     *
+     * Capped at 12 points: a card shows a badge and the detail screen a
+     * sparkline, and neither improves past a dozen. A listing that changed price
+     * forty times is a data-entry error, not a negotiation.
+     */
+    priceEvents: {
+      orderBy: { seenAt: 'asc' },
+      select: { totalPrice: true, delta: true, seenAt: true },
+      take: 12,
+    },
   } satisfies Prisma.PropertyInclude;
 }
 
@@ -482,6 +589,11 @@ export async function getFeed(ws: Workspace, opts: FeedOptions = {}): Promise<Fe
 
   const pref = opts.ignorePreferences ? null : await getPreferenceProfile(ws);
   const where: Prisma.PropertyWhereInput = { ...preferenceWhere(pref) };
+
+  // `preferenceWhere` always sets `active: true`. Dropping the key rather than
+  // setting it to `undefined`, which Prisma treats as "no filter" but which
+  // typechecks the same and is easy to misread.
+  if (opts.includeInactive) delete where.active;
 
   applyFilters(where, pref, opts);
 
@@ -648,6 +760,11 @@ function comparator(sort: FeedSort, ws: Workspace): (a: FeedItem, b: FeedItem) =
     case 'reviewed_desc':
       return (a, b) => reviewedAt(b, ws) - reviewedAt(a, ws);
 
+    case 'drop_desc':
+      // Most negative change first. Derived from the price history, which Prisma
+      // cannot order by, so it joins the in-memory ranking path.
+      return (a, b) => (priceSignal(a.priceEvents)?.changeSinceFirst ?? 0) - (priceSignal(b.priceEvents)?.changeSinceFirst ?? 0);
+
     default:
       return () => 0;
   }
@@ -699,7 +816,7 @@ export async function getStatusCounts(ws: Workspace): Promise<Record<Interaction
 export async function getReviewSummary(ws: Workspace) {
   const scope = scopeFilter(ws);
 
-  const [ratings, reviewed, pinned, upcomingVisits, priced] = await Promise.all([
+  const [ratings, reviewed, pinned, upcomingVisits, priced, archived] = await Promise.all([
     prisma.propertyInteraction.aggregate({
       where: { ...scope, rating: { not: null } },
       _avg: { rating: true },
@@ -709,9 +826,15 @@ export async function getReviewSummary(ws: Workspace) {
     prisma.propertyInteraction.count({ where: { ...scope, pinned: true } }),
     prisma.visit.count({ where: { ...scope, scheduledAt: { gte: new Date() } } }),
     prisma.property.aggregate({
-      where: { interactions: { some: { ...scope, status: { not: 'DISCOVERED' } } } },
+      // Live listings only: an ad that closed at R$ 2.400 six weeks ago should not
+      // drag the "cheapest you are looking at" figure down to something you cannot
+      // rent.
+      where: { active: true, interactions: { some: { ...scope, status: { not: 'DISCOVERED' } } } },
       _min: { totalPrice: true },
       _avg: { totalPrice: true },
+    }),
+    prisma.property.count({
+      where: { active: false, interactions: { some: { ...scope, status: { not: 'DISCOVERED' } } } },
     }),
   ]);
 
@@ -723,7 +846,46 @@ export async function getReviewSummary(ws: Workspace) {
     upcomingVisits,
     cheapest: priced._min.totalPrice,
     avgPrice: priced._avg.totalPrice === null ? null : Math.round(priced._avg.totalPrice),
+    /** Reviewed listings whose ad has since closed. */
+    archived,
   };
+}
+
+/**
+ * Two to four listings for the side-by-side comparison.
+ *
+ * Returned in the order the ids were given, not the database's — the user chose
+ * that order by picking them, and re-sorting would make the columns move between
+ * page loads for no reason.
+ */
+export async function getComparison(ws: Workspace, ids: string[]) {
+  if (ids.length < 2) return [];
+
+  const rows = await prisma.property.findMany({
+    where: { id: { in: ids.slice(0, 4) } },
+    include: feedInclude(ws),
+  });
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+
+  return ids
+    .map((id) => byId.get(id))
+    .filter((row): row is (typeof rows)[number] => row !== undefined)
+    .map((property) => ({
+      ...property,
+      partyScore: scoreProperty(
+        property.interactions.map((i) => ({
+          userId: i.userId,
+          rating: i.rating,
+          status: i.status,
+          pros: i.pros,
+          cons: i.cons,
+        })),
+        ws.members.length,
+      ),
+      mine: property.interactions.find((i) => i.userId === ws.userId) ?? null,
+      commentCount: property._count.comments,
+    }));
 }
 
 /** Kanban data: every property this workspace has acted on, grouped by status. */
@@ -780,6 +942,10 @@ export async function getPropertyDetail(ws: Workspace, propertyId: string) {
         include: { user: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'asc' },
       },
+      // The mirror index, for displayImages(). Not filtered to `path != null`
+      // here: the detail screen also wants to know whether a copy exists at all,
+      // to say so when the ad has come down.
+      photos: { select: { remoteUrl: true, path: true }, orderBy: { position: 'asc' } },
     },
   });
 

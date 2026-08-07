@@ -9,9 +9,22 @@ import { countActiveFilters, FEED_SORTS, FEED_STATUSES } from '@/lib/feed-params
 import type { FeedFacets } from '@/lib/queries';
 import { useT } from './LocaleProvider';
 
-/** Suggested ceilings/floors, in BRL and m². Free text is still accepted. */
-const PRICE_STEPS = [1000, 1500, 2000, 2500, 3000, 4000, 5000, 7000, 10000, 15000];
-const SQM_STEPS = [20, 30, 40, 50, 70, 90, 120, 150, 200];
+/**
+ * Suggested price points, per listing type. Free text is still accepted.
+ *
+ * These are not decoration. A purchase in Brazil is a six- or seven-figure
+ * number, and offering "≤ R$ 15.000" as the top step (which is what the single
+ * rent-shaped list did) makes the filter look broken for anyone using Buy mode.
+ */
+const PRICE_STEPS: Record<'RENT' | 'SALE', number[]> = {
+  RENT: [1000, 1500, 2000, 2500, 3000, 4000, 5000, 7000, 10000, 15000],
+  SALE: [150_000, 250_000, 350_000, 500_000, 650_000, 800_000, 1_000_000, 1_500_000, 2_000_000, 3_000_000],
+};
+
+/** Increment of the number input's spinner, per listing type. */
+const PRICE_STEP_SIZE: Record<'RENT' | 'SALE', number> = { RENT: 50, SALE: 10_000 };
+
+const SQM_STEPS = [20, 30, 40, 50, 70, 90, 120, 150, 200, 300];
 const NEW_WITHIN = [1, 3, 7, 14, 30];
 
 /** Above this many neighborhoods the list needs a search box to be usable. */
@@ -85,10 +98,15 @@ export default function FeedControls({
   const ignoring = params.get('ignorePreferences') === 'true';
   const pinnedOnly = params.get('pinned') === 'true';
   const photosOnly = params.get('photos') === 'true';
+  const droppedOnly = params.get('droppedOnly') === 'true';
 
   const activeExtras = countActiveFilters(Object.fromEntries(collect(params)));
   const [expanded, setExpanded] = useState(activeExtras > 0);
   const [hoodQuery, setHoodQuery] = useState('');
+
+  /** Rent and purchase need different price controls entirely. */
+  const forSale = facets.listingType === 'SALE';
+  const priceSteps = PRICE_STEPS[forSale ? 'SALE' : 'RENT'];
 
   /** Submits the form the control belongs to. */
   const submit = (event: { currentTarget: { form: HTMLFormElement | null } }) => {
@@ -186,7 +204,7 @@ export default function FeedControls({
         type="number"
         inputMode="numeric"
         min={0}
-        step={unit === 'm²' ? 5 : 50}
+        step={unit === 'm²' ? 5 : PRICE_STEP_SIZE[forSale ? 'SALE' : 'RENT']}
         list={`${key}-steps`}
         placeholder={placeholder}
         defaultValue={params.get(key) ?? ''}
@@ -386,8 +404,8 @@ export default function FeedControls({
             R$ 4.100, that is the difference between guessing a number and being
             told the range you are filtering inside. */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {numberField('minPrice', t.filters.minPrice, bound(facets.priceRange, 'min'), PRICE_STEPS, 'R$')}
-          {numberField('maxPrice', t.filters.maxPrice, bound(facets.priceRange, 'max'), PRICE_STEPS, 'R$')}
+          {numberField('minPrice', t.filters.minPrice, bound(facets.priceRange, 'min'), priceSteps, 'R$')}
+          {numberField('maxPrice', t.filters.maxPrice, bound(facets.priceRange, 'max'), priceSteps, 'R$')}
           {numberField('minSqm', t.filters.minSqm, bound(facets.sqmRange, 'min'), SQM_STEPS, 'm²')}
           {numberField('maxSqm', t.filters.maxSqm, bound(facets.sqmRange, 'max'), SQM_STEPS, 'm²')}
         </div>
@@ -463,6 +481,16 @@ export default function FeedControls({
               [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: '★'.repeat(n) })),
             )}
 
+          {/* Only offered once a commute address is configured and routes exist —
+              a filter that can only ever return nothing is worse than no filter. */}
+          {facets.hasCommuteData &&
+            select(
+              'maxCommute',
+              t.filters.maxCommute,
+              t.filters.any,
+              [10, 15, 20, 30, 45, 60].map((n) => ({ value: String(n), label: `≤ ${n} min` })),
+            )}
+
           <div className="flex flex-wrap items-center gap-2">
             <label
               className={clsx(
@@ -479,6 +507,23 @@ export default function FeedControls({
                 className="sr-only"
               />
               📷 {t.filters.withPhotos}
+            </label>
+
+            <label
+              className={clsx(
+                'cursor-pointer select-none rounded-xl px-3 py-2 text-xs font-semibold transition-all duration-150 ease-neu',
+                droppedOnly ? 'pressed-on' : 'pressed-off',
+              )}
+            >
+              <input
+                type="checkbox"
+                name="droppedOnly"
+                value="true"
+                defaultChecked={droppedOnly}
+                onChange={submit}
+                className="sr-only"
+              />
+              📉 {t.filters.droppedOnly}
             </label>
           </div>
         </div>

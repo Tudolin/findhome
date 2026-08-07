@@ -74,16 +74,17 @@ function printPhotoReport(probes: Probe[]): void {
   for (const probe of withSample) {
     const count = probe.sample?.images?.length ?? 0;
     const backfilled = !PHOTOS_STATUS.skipsSources.includes(probe.source);
-    const verdict =
-      count >= PHOTOS_STATUS.minImages
-        ? 'full gallery in the search response'
-        : backfilled
-          ? PHOTOS_STATUS.enabled
-            ? 'cover only -> the backfill pass will open the listing page'
-            : 'cover only -> PHOTOS_ENABLED=false, so nothing will fill it in'
-          : 'cover only, and this source is skipped by the backfill';
+    const verdict = !backfilled
+      ? 'no listing page to open; this is all there is'
+      : !PHOTOS_STATUS.enabled
+        ? 'PHOTOS_ENABLED=false, so this is all you get'
+        : 'the backfill pass will open the listing page for the rest';
     console.log(`  ${probe.source.padEnd(14)} ${String(count).padStart(2)} photo(s)   ${verdict}`);
   }
+
+  console.log('');
+  console.log('  A search response never carries the whole album. `make photos-stats` shows');
+  console.log('  what is actually stored per source once the backfill has run.');
 }
 
 function summarise(result: JsonResult): string {
@@ -153,7 +154,11 @@ async function probeGrupoZap(
 
     if (result.ok && result.json !== null) {
       const listings = extractListings(result.json);
-      const mapped = listings.map((raw) => mapListing(raw, portal.origin)).filter((l): l is RawListing => l !== null);
+      // The target's listing type matters: a Buy probe that mapped as RENT would
+      // report "healthy" while the real run stored nothing usable.
+      const mapped = listings
+        .map((raw) => mapListing(raw, portal.origin, target.listingType))
+        .filter((l): l is RawListing => l !== null);
       const kept = applyTargetFilters(mapped, target);
       probe.attempts.push(
         `variant "${variant.name}": ${summarise(result)} - ${listings.length} listing(s), ` +
@@ -389,8 +394,11 @@ async function main(): Promise<void> {
   console.log('FindHome scraper doctor');
   console.log(line);
   console.log(
-    `photos:   backfill ${PHOTOS_STATUS.enabled ? 'ON' : 'OFF'} · ` +
-      `up to ${PHOTOS_STATUS.maxPerRun}/run · fills listings with < ${PHOTOS_STATUS.minImages} photo(s)`,
+    `photos:   backfill ${PHOTOS_STATUS.enabled ? 'ON' : 'OFF'} · up to ${PHOTOS_STATUS.maxPerRun}/run · ` +
+      (PHOTOS_STATUS.minImages > 0
+        ? `only listings with < ${PHOTOS_STATUS.minImages} photo(s)`
+        : 'every listing, once') +
+      ` · store ${PHOTOS_STATUS.maxPerListing > 0 ? `up to ${PHOTOS_STATUS.maxPerListing}` : 'all'} per listing`,
   );
   console.log(`sources:  ${sources.join(', ')}   (all known: ${ALL_SOURCES.join(', ')})`);
   console.log(`target:   ${describeTarget(target)}`);

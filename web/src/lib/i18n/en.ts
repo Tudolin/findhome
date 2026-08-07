@@ -19,6 +19,7 @@ export const en = {
     visits: 'Visits',
     coop: 'Co-Op Hub',
     preferences: 'Preferences',
+    security: 'Security',
     signOut: 'Sign out',
     workspaces: 'Workspaces',
     soloMode: 'Solo mode',
@@ -90,6 +91,8 @@ export const en = {
     petsYes: 'Pet-friendly (or unstated)',
     petsNo: 'Not pet-friendly',
     withPhotos: 'With photos',
+    droppedOnly: 'Price dropped',
+    maxCommute: 'Commute up to',
     newWithin: 'Found within',
     anyTime: 'Any time',
     lastDays: (days: number) => (days === 1 ? 'last 24 hours' : `last ${days} days`),
@@ -113,6 +116,9 @@ export const en = {
       ppsqm_asc: 'Best price per m²',
       rating_desc: 'Your rating',
       reviewed_desc: 'Recently reviewed',
+      drop_desc: 'Biggest price cut',
+      sitting: 'Longest on the market',
+      commute_asc: 'Shortest commute',
     },
     statuses: {
       ALL: 'All',
@@ -145,8 +151,9 @@ export const en = {
       avgRating: 'Avg. rating',
       pinned: 'Pinned',
       visits: 'Upcoming visits',
-      cheapest: 'Cheapest',
+      cheapest: 'Cheapest live',
       avgPrice: 'Average',
+      archived: 'Ads closed',
     },
     emptyTitle: 'You have not reviewed anything yet.',
     emptyBody: 'Rate a listing, mark it Interested, or pin it, and it lands here. Start from',
@@ -159,6 +166,22 @@ export const en = {
     photos: (n: number) => `${n} photos`,
     perMonth: '/mo all-in',
     breakdown: (rent: string, fees: string) => `${rent} rent + ${fees} fees`,
+    /** Sale listings: the headline is a one-off price, not a monthly one. */
+    askingPrice: 'asking price',
+    saleMonthly: (monthly: string) => `+ ${monthly}/mo in condo fee and property tax`,
+    saleNoMonthly: 'condo fee and property tax not published',
+    /** The ad's own page returned 404/410 — direct evidence it was taken down. */
+    adClosed: 'ad closed',
+    /** It merely stopped appearing in results, which is weaker evidence. */
+    noLongerListed: 'no longer listed',
+    lastAdvertised: 'last advertised',
+    archivedNoPhotos: 'Photos no longer available',
+    photosLost: (n: number) => `${n} more photo${n === 1 ? '' : 's'} could not be kept`,
+    originalGone: 'Original ✕',
+    originalGoneHint: 'The ad has closed — this link probably leads nowhere.',
+    commute: (min: number) => `${min} min`,
+    daysListed: (days: number) => (days === 0 ? 'listed today' : `${days} days listed`),
+    priceMovesTitle: (n: number) => `Price has moved ${n} time${n === 1 ? '' : 's'} since it was first seen`,
     bed: 'bed',
     bath: 'bath',
     parking: 'parking',
@@ -215,8 +238,12 @@ export const en = {
     addNeighborhood: 'Add a neighborhood…',
     add: 'Add',
     budget: 'Budget',
+    budgetSale: 'Purchase budget',
+    budgetSaleHint:
+      'Checked against the asking price. Condo fee and property tax are shown on each listing but are not added to it — you pay those monthly, after buying.',
     budgetAllIn: 'The ceiling is checked against rent + condo fee + taxes — what actually leaves your account.',
     budgetRentOnly: 'The ceiling is checked against the advertised rent only.',
+    quickCeilings: 'Common ceilings',
     includeCondo: 'Calculate max budget as (Rent + Condo Fee + Taxes)',
     includeCondoHint: 'Turn off to compare against bare rent, ignoring monthly fees.',
     minimum: 'Minimum',
@@ -241,6 +268,17 @@ export const en = {
     everyMember: ' — every member sees this filter',
     scrapeHint: 'Saving here changes what the scraper looks for on its next run. To pull listings immediately, use',
     onTheFeed: 'on the discovery feed.',
+    commute: 'Commute',
+    commuteHint:
+      'Where do you need to get to most days? Listings then show how long the trip takes, and you can filter and sort by it.',
+    commuteAddress: 'Address',
+    commuteAddressHint:
+      'Leave empty to turn it off. Needs a routing provider — see COMMUTE_PROVIDER in the README.',
+    commuteMode: 'By',
+    driving: 'Car',
+    cycling: 'Bike',
+    walking: 'Walking',
+    maxCommute: 'At most',
   },
 
   alerts: {
@@ -274,6 +312,11 @@ export const en = {
     haveAccount: 'Already have an account?',
     submitting: 'Please wait…',
     genericError: 'Something went wrong',
+    passwordStrength: 'Password strength',
+    totpTitle: 'Code from your authenticator app',
+    totpHint: 'Six digits, or one of your recovery codes.',
+    totpVerify: 'Verify',
+    totpBack: '← Use a different account',
   },
 
   property: {
@@ -284,7 +327,34 @@ export const en = {
     bathrooms: 'Bathrooms',
     parking: 'Parking',
     area: 'Area',
+    adClosed: 'This ad has closed — the portal no longer has a page for it.',
+    noLongerListed: 'This listing has stopped appearing in the portal’s results.',
+    adClosedOn: (when: string) => `Noticed ${when}.`,
+    /**
+     * Deliberately hedged. The app knows the ad closed; it does not know the flat
+     * was taken, and claiming so would be inventing a fact the data does not carry.
+     */
+    archivedMeaning:
+      'That usually means it was rented or sold, but it can also mean the advertiser simply withdrew it. Your rating, notes and pros/cons are kept either way.',
+    archivedKept: (n: number) =>
+      n === 1
+        ? 'One photo was saved before the ad closed, so you can still recognise it.'
+        : `${n} photos were saved before the ad closed.`,
+    archivedNoKept: 'No photo was saved before the ad closed, so there is nothing left to show.',
     priceBreakdown: 'Price breakdown',
+    saleBreakdown: 'Price and running costs',
+    askingPrice: 'Asking price',
+    afterBuying: 'What you keep paying',
+    monthlyAfter: 'Monthly after buying',
+    pricePerSqm: 'Price per m²',
+    feesUnknown: 'This portal does not publish the condo fee or the property tax, so both read as zero.',
+    entryCost: 'Real cost to buy',
+    entryCostHint: 'What actually leaves your account — the advertised price plus the taxes and fees no portal shows.',
+    itbi: 'ITBI (transfer tax)',
+    deed: 'Deed (escritura)',
+    registry: 'Registry (registro)',
+    entryTotal: 'Total up front',
+    feesOnly: 'Taxes and fees',
     rent: 'Rent',
     condoFee: 'Condo fee',
     taxes: 'Taxes (IPTU etc.)',
@@ -353,6 +423,111 @@ export const en = {
     rotateHelp: 'Anyone with the current link can read your agenda. Generating a new one breaks existing subscriptions.',
     rotateConfirm: 'Replace the link? Calendars already subscribed will stop updating.',
     pastDate: 'That time is in the past.',
+  },
+
+  compare: {
+    title: 'Compare',
+    subtitle:
+      'Two to four side by side. The best figure in each row is highlighted — not a single winning score, because the trade-off is the reason you are comparing.',
+    property: 'Listing',
+    commute: 'Commute',
+    listedFor: 'On the market',
+    priceMove: 'Price change',
+    noMove: 'unchanged',
+    entryCost: 'Real cost to buy',
+    upfront: 'Up front',
+    emptyTitle: 'Pick at least two listings to compare.',
+    emptyBody: 'Open Your homes, tick the ones you are deciding between, and press Compare.',
+    rateHint: 'Rate them and your own scores appear here too.',
+    costDisclaimer:
+      'Purchase costs are an estimate: ITBI is municipal and the rate varies by city, and the deed is waived when the purchase is financed. Confirm with the cartório before budgeting.',
+    select: 'Compare',
+    selected: (n: number) => `${n} selected`,
+    clear: 'Clear selection',
+    pickOneMore: 'Pick one more',
+  },
+
+  security: {
+    title: 'Security',
+    subtitle:
+      'Two-factor authentication, the devices signed in to this account, and every sign-in attempt made against it.',
+    confirmPassword: 'Your password',
+    confirmPasswordHint:
+      'Every action on this page asks for it. That is what stops someone at an unlocked laptop from turning off two-factor and locking you out.',
+    twoFactor: 'Two-factor authentication',
+    twoFactorHint: 'A six-digit code from your phone, on top of the password.',
+    on: 'On',
+    off: 'Off',
+    enable2fa: 'Set up two-factor',
+    disable2fa: 'Turn off two-factor',
+    confirmDisable: 'Turn off two-factor authentication for this account?',
+    scanHint:
+      'Add this to Google Authenticator, Authy, 1Password or Bitwarden — paste the link, or type the secret by hand.',
+    secret: 'Secret',
+    otpauthUri: 'Link',
+    enterCode: 'Code from the app',
+    confirmEnable: 'Confirm and turn on',
+    twoFactorOn: 'Two-factor is on. Save your recovery codes.',
+    twoFactorOff: 'Two-factor is off.',
+    saveCodes: 'Save these recovery codes now',
+    saveCodesHint:
+      'Each works once, in place of the code from your phone. This is the only time they are shown — there is no way to read them back. Without them, a lost phone means a lost account.',
+    recoveryLeft: (n: number) =>
+      n === 0
+        ? 'No recovery codes left. Turn two-factor off and on again to get a new set.'
+        : `${n} recovery code${n === 1 ? '' : 's'} left.`,
+    devices: 'Signed-in devices',
+    devicesHint: 'Anything you do not recognise, sign out.',
+    thisDevice: 'this device',
+    unknownDevice: 'Unknown device',
+    lastUsed: (when: string) => `last used ${when}`,
+    signOut: 'Sign out',
+    signOutOthers: 'Sign out everywhere else',
+    confirmSignOutAll: 'Sign out every other device?',
+    deviceSignedOut: 'Device signed out.',
+    othersSignedOut: (n: number) => `${n} other device${n === 1 ? '' : 's'} signed out.`,
+    changePassword: 'Change password',
+    newPassword: 'New password',
+    lastChanged: (when: string) => `Last changed ${when}.`,
+    neverChanged: 'Never changed.',
+    changeSignsOut: 'Changing it signs out every other device. This one stays signed in.',
+    passwordChanged: (n: number) => `Password changed. ${n} other device${n === 1 ? '' : 's'} signed out.`,
+    activity: 'Recent activity',
+    activityHint: (threshold: number, minutes: number) =>
+      `After ${threshold} wrong passwords in a row the account locks for ${minutes} minutes. An attempt you do not recognise means someone has your email — change the password.`,
+    noActivity: 'Nothing recorded yet.',
+    succeeded: 'Signed in',
+    failed: 'Failed',
+  },
+
+  public: {
+    headline: 'Every portal. One feed. One decision.',
+    subhead:
+      'ZAP, Viva Real, QuintoAndar, OLX, ImovelWeb and Chaves na Mão in one place — no repeats, and always the all-in price. Browse for free; create an account to save, compare and decide together.',
+    createAccount: 'Create account',
+    createAccountFree: 'Create a free account',
+    listingType: 'Looking to',
+    anyCity: 'Every city',
+    showing: (shown: number, total: number, city: string) =>
+      city
+        ? `Showing ${shown} of ${total} listings in ${city}`
+        : `Showing ${shown} of ${total} listings`,
+    updatedTwiceDaily: 'Updated twice a day',
+    emptyTitle: 'Nothing matches this search yet.',
+    emptyBody: 'Try another city or a wider price range.',
+    lockedTitle: (n: number) => `${n.toLocaleString('pt-BR')} more listings`,
+    lockedBody: 'Free to keep browsing — an account is what lets you do something with them.',
+    benefitSave: 'Rate, shortlist and write notes on each flat',
+    benefitCompare: 'Compare up to four side by side',
+    benefitTogether: 'Search with someone else, on one shared shortlist',
+    benefitAlerts: 'Alerts for new listings and price drops',
+    alreadyHave: 'Already have an account?',
+    registrationClosed:
+      'This server is not accepting new accounts. Ask whoever runs it for an invite.',
+    gatedTitle: 'With an account you can',
+    backToList: '← Back to the listings',
+    disclaimer:
+      'FindHome collects publicly listed ads from third-party portals and does not broker rentals or sales. Contact is always with whoever placed the ad, on the original listing. Prices and details are the advertiser’s and may be out of date. Trademarks belong to their owners.',
   },
 
   common: {

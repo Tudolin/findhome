@@ -21,6 +21,10 @@ const schema = z.object({
   minSqm: z.number().int().min(0).max(2000).default(0),
   petFriendly: z.boolean().default(false),
   amenities: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  // --- Commute --------------------------------------------------------------
+  commuteAddress: z.string().trim().max(300).nullish(),
+  commuteMode: z.enum(['driving', 'cycling', 'walking']).default('driving'),
+  maxCommuteMin: z.number().int().min(1).max(240).nullable().default(null),
   // --- WhatsApp alerts ------------------------------------------------------
   alertsEnabled: z.boolean().default(false),
   /** Any punctuation is accepted here and stripped below. */
@@ -76,6 +80,21 @@ export const PUT = handler(async (req: Request) => {
     throw badRequest('The WhatsApp number needs a country code and area code, e.g. 5541999998888');
   }
 
+  /**
+   * A changed commute address invalidates every routed time.
+   *
+   * `commuteLat`/`commuteLng` are cleared so the geocoder resolves the new
+   * address, and the *properties'* `commuteCheckedAt` is cleared below so they
+   * are re-routed against it. Without that, moving jobs would leave every listing
+   * showing the distance to the old office — silently, and wrongly.
+   */
+  const previous = await prisma.preferenceProfile.findFirst({
+    where: ws.kind === 'SOLO' ? { userId: ws.userId } : { partyId: ws.partyId! },
+    select: { commuteAddress: true },
+  });
+  const commuteAddress = input.commuteAddress?.trim() || null;
+  const commuteMoved = (previous?.commuteAddress ?? null) !== commuteAddress;
+
   const data = {
     ...input,
     city,
@@ -85,6 +104,8 @@ export const PUT = handler(async (req: Request) => {
     neighborhoodSlugs: neighborhoods.map(locationSlug),
     alertWhatsapp,
     alertsEnabled: input.alertsEnabled && alertWhatsapp !== null,
+    commuteAddress,
+    ...(commuteMoved ? { commuteLat: null, commuteLng: null } : {}),
   };
 
   const owner = ws.kind === 'SOLO' ? { userId: ws.userId } : { partyId: ws.partyId! };
@@ -103,6 +124,14 @@ export const PUT = handler(async (req: Request) => {
           update: data,
           create: { ...data, ...owner },
         });
+
+  if (commuteMoved) {
+    // Re-queue every listing for routing. Cheap (one indexed UPDATE) and the only
+    // alternative is showing distances to an address nobody commutes to any more.
+    await prisma.property
+      .updateMany({ where: { commuteCheckedAt: { not: null } }, data: { commuteCheckedAt: null, commuteMin: null } })
+      .catch(() => undefined);
+  }
 
   return ok({ profile });
 });

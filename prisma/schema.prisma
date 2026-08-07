@@ -68,14 +68,131 @@ model User {
   /// the URL; it is generated on first use and can be rotated from the app.
   calendarToken String? @unique @map("calendar_token")
 
+  // --- Authentication -------------------------------------------------------
+  /// Changing a password revokes every session; this is what the check reads.
+  passwordChangedAt DateTime? @map("password_changed_at")
+
+  /// Base32 TOTP secret. Present means "set up"; `totpEnabledAt` means "in force".
+  /// The two are separate so a half-finished setup cannot lock anyone out.
+  totpSecret    String?   @map("totp_secret") @db.VarChar(64)
+  totpEnabledAt DateTime? @map("totp_enabled_at")
+  /// Last accepted time step. A TOTP code is valid for ~90 seconds, which is
+  /// plenty of time for somebody watching the network to replay it — refusing a
+  /// step that has already been used is what closes that window.
+  totpLastStep  Int?      @map("totp_last_step")
+
+  /// Consecutive failures. Reset on any success.
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  /// Set once the failures cross the threshold. Survives a container restart,
+  /// which the in-memory rate limiter does not.
+  lockedUntil      DateTime? @map("locked_until")
+
   createdParties    Party[]               @relation("PartyCreator")
   memberships       PartyMember[]
   preferenceProfile PreferenceProfile?    @relation("SoloPreferences")
   interactions      PropertyInteraction[]
   comments          PropertyComment[]
   visits            Visit[]
+  sessions          Session[]
+  recoveryCodes     RecoveryCode[]
 
   @@map("users")
+}
+
+/**
+ * A signed-in browser.
+ *
+ * ## Why this table exists at all
+ *
+ * The session was a bare stateless JWT: signed, 30-day expiry, and **impossible
+ * to revoke**. Signing out deleted the cookie and nothing else, so a token
+ * captured from a shared laptop or a backup kept working for a month, and
+ * changing your password did not help. On a LAN that was a defensible trade;
+ * on the public internet it is not.
+ *
+ * Now the JWT carries a `jti` and this row is the authority. Every request
+ * resolves it (see getSession in web/src/lib/auth.ts), which costs one indexed
+ * lookup and buys: sign out everywhere, per-device revocation, "this session was
+ * last used from…", and password changes that actually invalidate everything.
+ *
+ * The middleware still checks only the signature — it runs on the Edge runtime
+ * and cannot reach Prisma. That is fine: it was always a coarse gate, and the
+ * page and API layers were always the real enforcement point.
+ */
+model Session {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+
+  /// SHA-256 of the token's `jti`, never the jti itself. A dump of this table
+  /// therefore hands out no working sessions.
+  tokenHash String @unique @map("token_hash") @db.VarChar(64)
+
+  /// Shown on the security screen so an unfamiliar device is recognisable.
+  /// Truncated and never parsed — it is a label, not a security control.
+  userAgent String? @map("user_agent") @db.VarChar(300)
+  ip        String? @db.VarChar(64)
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  /// Throttled to once a minute; this is for the human reading the list.
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/**
+ * A single-use way back in when the authenticator app is gone.
+ *
+ * Without these, turning on 2FA on a self-hosted app with no email delivery is a
+ * loaded gun: lose the phone and the only recovery is a psql prompt. Ten codes,
+ * bcrypt-hashed exactly like a password, each usable once.
+ */
+model RecoveryCode {
+  id       String    @id @default(cuid())
+  userId   String    @map("user_id")
+  codeHash String    @map("code_hash")
+  usedAt   DateTime? @map("used_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@map("recovery_codes")
+}
+
+/**
+ * Every sign-in attempt, successful or not.
+ *
+ * Two jobs. It drives lockout that survives a restart — the in-memory limiter in
+ * lib/rate-limit.ts resets to zero every deploy, which on a public host is a
+ * window worth closing. And it gives the account owner a "recent activity" list,
+ * which is the only way anyone ever notices someone else has their password.
+ *
+ * Keyed on the submitted email rather than on a user id, so failures against an
+ * address that does not exist are recorded identically — no enumeration.
+ */
+model LoginAttempt {
+  id      String  @id @default(cuid())
+  email   String  @db.VarChar(200)
+  ip      String? @db.VarChar(64)
+  /// Truncated UA, for the same reason as on Session.
+  userAgent String? @map("user_agent") @db.VarChar(300)
+  success Boolean
+  /// `bad_password`, `no_account`, `bad_totp`, `locked`, `recovery_code`…
+  /// Never shown to the person attempting; only to the account owner.
+  reason  String? @db.VarChar(40)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([email, createdAt])
+  @@index([createdAt])
+  @@map("login_attempts")
 }
 
 model Party {
@@ -154,6 +271,18 @@ model PreferenceProfile {
   petFriendly Boolean  @default(false) @map("pet_friendly")
   amenities   String[] @default([])
 
+  // --- Commute --------------------------------------------------------------
+  /// "Where do you need to get to?" — the filter that actually decides where
+  /// people live, and the one no portal offers. Free text as typed; the two
+  /// coordinates below are resolved from it by the geocoder.
+  commuteAddress String? @map("commute_address") @db.VarChar(300)
+  commuteLat     Float?  @map("commute_lat")
+  commuteLng     Float?  @map("commute_lng")
+  /// `driving`, `cycling` or `walking` — whatever the routing provider accepts.
+  commuteMode    String  @default("driving") @map("commute_mode") @db.VarChar(20)
+  /// Minutes. Null means "do not filter on it", which is the default.
+  maxCommuteMin  Int?    @map("max_commute_min")
+
   // --- WhatsApp alerts ------------------------------------------------------
   // Opt-in per workspace: a party alerts one shared number, a solo profile the
   // owner's. The provider and its credentials are server-wide env config — only
@@ -230,16 +359,48 @@ model Property {
   /// nothing", which is different from "never asked" (photosFetchedAt is null).
   photoCount      Int       @default(0) @map("photo_count")
 
+  /**
+   * Groups ads for the same physical flat.
+   *
+   * The same apartment is routinely listed on ZAP, OLX and ImovelWeb by two
+   * different agencies at two different prices, and de-duplication by
+   * `(source, external_id)` cannot see that — they are genuinely different ads.
+   * So a clustering pass (scraper/src/dedupe.ts) stamps ads that agree on
+   * location, size and layout with a shared key.
+   *
+   * Null means "not clustered": either the pass has not run, or the listing has
+   * no coordinates to cluster on. Never assume two nulls are related.
+   */
+  clusterKey String? @map("cluster_key") @db.VarChar(64)
+
+  // --- Commute ---------------------------------------------------------------
+  /// Minutes to the workspace's commute address, by its chosen mode.
+  commuteMin       Int?      @map("commute_min")
+  /// Stamped whether or not the route was found, so an unroutable listing is
+  /// tried once rather than on every run. Same rule as `geocodedAt`.
+  commuteCheckedAt DateTime? @map("commute_checked_at")
+
   listingType ListingType @default(RENT) @map("listing_type")
   active      Boolean     @default(true)
   lastSeenAt  DateTime    @default(now()) @map("last_seen_at")
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  /// When the listing's own page stopped existing (404/410 from the portal).
+  ///
+  /// `active` goes false at the same moment; this column records *why*. The
+  /// difference matters to the user: "dropped out of the search results" and
+  /// "the ad was taken down" look identical in the feed but mean different
+  /// things when it is a flat you had shortlisted.
+  goneAt DateTime? @map("gone_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   interactions PropertyInteraction[]
   comments     PropertyComment[]
   alerts       AlertDelivery[]
   visits       Visit[]
+  photos       PropertyPhoto[]
+  priceEvents  PropertyPriceEvent[]
 
   // De-duplication key for the scraping engine.
   @@unique([source, externalId])
@@ -249,7 +410,106 @@ model Property {
   @@index([createdAt])
   // Drives the gallery backfill's "needs photos, never tried" scan.
   @@index([photosFetchedAt, photoCount])
+  // Grouping ads for the same flat, and the clustering pass's own scan.
+  @@index([clusterKey])
+  @@index([commuteCheckedAt])
   @@map("properties")
+}
+
+/**
+ * A mirrored listing photo.
+ *
+ * `Property.images` stays the canonical, ordered list of the portal's own URLs —
+ * nothing here changes what the scraper stores or what order the carousel shows.
+ * This table is the *mirror index* beside it: one row per photo, recording
+ * whether we hold a local copy and where.
+ *
+ * ## Why mirror at all
+ *
+ * Two reasons, and both are about photos that silently stop working:
+ *
+ *  1. The portals expire their photo URLs. A listing shortlisted in March comes
+ *     back in May as a wall of grey placeholders, and there is nothing left to
+ *     look at when deciding between three flats you visited.
+ *  2. OLX's CDN refuses any request whose Referer is not olx.com.br (see
+ *     ListingImage.tsx). The browser cannot send one; the scraper can, because it
+ *     is fetching server-side. So mirroring is also the permanent fix for the
+ *     403s, rather than the `referrerPolicy` workaround.
+ *
+ * Files are content-addressed by a hash of the normalised URL, so two listings
+ * advertising the same flat share one file on disk.
+ *
+ * `path` null means "not mirrored". Whether that is *yet* or *ever* is the
+ * difference between `fetchedAt` being null and `failCount` being at its ceiling
+ * — the mirror pass needs to tell a fresh row from one it has already given up
+ * on, or a single dead URL is retried on every run forever.
+ */
+model PropertyPhoto {
+  id         String @id @default(cuid())
+  propertyId String @map("property_id")
+  /// 0-based index into Property.images, so the mirror keeps the portal's order.
+  position   Int
+
+  /// The portal URL, query string stripped — see photoKey() in the scraper.
+  remoteUrl String @map("remote_url") @db.VarChar(700)
+  /// Relative path under MEDIA_ROOT once mirrored, e.g. "a3/f19c…c4.webp".
+  path      String? @db.VarChar(120)
+
+  bytes       Int     @default(0)
+  contentType String? @map("content_type") @db.VarChar(60)
+
+  /// Set on success AND on giving up, so "never tried" stays distinguishable.
+  fetchedAt DateTime? @map("fetched_at")
+  failCount Int       @default(0) @map("fail_count")
+  lastError String?   @map("last_error") @db.VarChar(200)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, remoteUrl])
+  @@index([propertyId, position])
+  /// Orphan-file pruning joins on this.
+  @@index([path])
+  /// Drives the mirror queue: "no local copy, not given up on".
+  @@index([path, failCount])
+  @@map("property_photos")
+}
+
+/**
+ * One row every time a listing's price changes.
+ *
+ * The scraper re-reads every listing twice a day and upserts it, which meant each
+ * price cut was **silently overwritten** — the single most useful signal in a
+ * rental market was being thrown away on a schedule. Written only on a change, so
+ * a listing that sits still for three months costs one row, not 180.
+ *
+ * `createdAt` on Property is deliberately preserved across upserts, so
+ * "advertised for 47 days" needs no storage at all. Together they answer the
+ * question you actually take into a negotiation: how long has this been sitting,
+ * and has the asking price already moved?
+ */
+model PropertyPriceEvent {
+  id         String @id @default(cuid())
+  propertyId String @map("property_id")
+
+  /// All three, because which one matters depends on the listing type and on
+  /// whether the profile counts the condo fee. Whole BRL, like every price here.
+  rentPrice  Int @map("rent_price")
+  condoFee   Int @map("condo_fee")
+  totalPrice Int @map("total_price")
+
+  /// Change against the previous event. Negative is a cut. Zero on the first row,
+  /// which records the price the listing was first seen at.
+  delta Int @default(0)
+
+  seenAt DateTime @default(now()) @map("seen_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, seenAt])
+  @@index([seenAt])
+  @@map("property_price_events")
 }
 
 // One row per (property, user, workspace).
@@ -364,13 +624,26 @@ model AlertDelivery {
   id         String   @id @default(cuid())
   scopeKey   String   @map("scope_key")
   propertyId String   @map("property_id")
+  /**
+   * What was announced. `NEW` is the original behaviour; the others were added
+   * once there was something worth saying about a listing you already knew:
+   *
+   *   NEW          first time this listing matched the search
+   *   PRICE_DROP   the asking price fell on something you rated or shortlisted
+   *   GONE         the ad closed on something you had reacted to
+   *
+   * It is part of the unique key, so each kind can be announced once per listing
+   * without a price cut being suppressed by the "already told you about this
+   * flat" rule.
+   */
+  kind       String   @default("NEW") @db.VarChar(20)
   sentAt     DateTime @default(now()) @map("sent_at")
   /// Which provider carried it, for debugging a silent channel.
   channel    String   @db.VarChar(30)
 
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
-  @@unique([scopeKey, propertyId])
+  @@unique([scopeKey, propertyId, kind])
   @@index([sentAt])
   @@map("alert_deliveries")
 }

@@ -42,6 +42,7 @@ export default function TopBar({
     { href: '/visits', label: t.nav.visits },
     { href: '/co-op', label: t.nav.coop },
     { href: '/preferences', label: t.nav.preferences },
+    { href: '/security', label: t.nav.security },
   ];
 
   const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];

@@ -246,7 +246,8 @@ export function mapCard(card: Card, target: SearchTarget): RawListing | null {
         .map((src) => clean(src, 500))
         .filter((src) => /^https?:/.test(src) && /(olx|olxbr)\b/i.test(src) && !/logo|sprite|icon/i.test(src))
         .map(upgradeImage),
-    ).slice(0, 12),
+      // Uncapped: the ceiling is applied once, in persist.ts.
+    ),
     amenities: [],
     petFriendly: detectPetPolicy(title),
     listingType: target.listingType,

@@ -8,6 +8,8 @@ import path from 'node:path';
  *     'unsafe-inline' is required for scripts until that is converted to a nonce;
  *   - the map loads Leaflet from unpkg and tiles from tile.openstreetmap.org;
  *   - listing photos come from whatever CDN the portal used, so img-src is open.
+ *     Mirrored copies are served from this origin (/media/…) and are covered by
+ *     'self'; the wildcard is still needed for the ones not yet mirrored.
  *
  * So this is a hardening baseline, not an XSS-proof policy — `script-src` with
  * 'unsafe-inline' is the weak link, and it is stated here rather than implied.

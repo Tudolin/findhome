@@ -5,7 +5,19 @@ import clsx from 'clsx';
 import ListingImage from './ListingImage';
 import { useT } from './LocaleProvider';
 
-export default function PhotoCarousel({ images, alt }: { images: string[]; alt: string }) {
+export default function PhotoCarousel({
+  images,
+  alt,
+  /** The ad is closed. Changes what an empty gallery *means*. */
+  archived = false,
+  /** Photos that existed while the ad was live and are no longer retrievable. */
+  missing = 0,
+}: {
+  images: string[];
+  alt: string;
+  archived?: boolean;
+  missing?: number;
+}) {
   const t = useT();
   const [index, setIndex] = useState(0);
 
@@ -22,10 +34,22 @@ export default function PhotoCarousel({ images, alt }: { images: string[]; alt: 
     return () => window.removeEventListener('keydown', onKey);
   }, [count]);
 
+  /**
+   * Nothing to show.
+   *
+   * Two different situations wearing the same empty box, and conflating them is a
+   * real loss of information: a live listing whose portal published no photo is
+   * "no photo", while a closed ad whose twelve photos are gone is "these existed
+   * and are no longer retrievable". The second deserves the count.
+   */
   if (count === 0) {
     return (
-      <div className="flex aspect-[16/10] items-center justify-center rounded-2xl bg-surface text-sm text-ink-400 shadow-neu-inset">
-        {t.card.noPhoto}
+      <div className="card flex aspect-[4/3] flex-col items-center justify-center gap-2 p-8 text-center">
+        <span aria-hidden className="text-3xl opacity-40">
+          {archived ? '🗄️' : '🏚️'}
+        </span>
+        <p className="text-sm font-bold text-ink-600">{archived ? t.card.archivedNoPhotos : t.card.noPhoto}</p>
+        {archived && missing > 0 && <p className="text-xs text-ink-400">{t.card.photosLost(missing)}</p>}
       </div>
     );
   }
@@ -79,6 +103,13 @@ export default function PhotoCarousel({ images, alt }: { images: string[]; alt: 
           )}
         </div>
       </div>
+
+      {/* Said out loud rather than letting a one-photo archive look like a
+          one-photo listing. This is the note that explains why a flat you
+          remember having a dozen photos now has one. */}
+      {archived && missing > 0 && (
+        <p className="mt-2 text-center text-xs text-ink-400">{t.card.photosLost(missing)}</p>
+      )}
 
       {count > 1 && (
         <div className="scrollbar-thin mt-3 flex gap-2.5 overflow-x-auto px-1 pb-2">

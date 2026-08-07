@@ -76,6 +76,28 @@ services:
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      # --- Public feed --------------------------------------------------------
+      # Listings a visitor sees at `/` before the sign-up gate, and how long the
+      # public queries are cached in-process. The gate is a product decision, not
+      # a security boundary — everything shown is already public on the portals.
+      PUBLIC_FEED_LIMIT: ${PUBLIC_FEED_LIMIT:-20}
+      PUBLIC_FEED_CACHE_MS: ${PUBLIC_FEED_CACHE_MS:-60000}
+      # --- Login hardening ----------------------------------------------------
+      # bcrypt work factor. Each step doubles the cost of a login AND of cracking
+      # a stolen hash. 12 is ~250ms; raise it if your CPU can take it.
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      # Consecutive wrong passwords before the account locks, and for how long.
+      # This survives a container restart; the in-memory limiter does not.
+      LOGIN_LOCK_THRESHOLD: ${LOGIN_LOCK_THRESHOLD:-8}
+      LOGIN_LOCK_MINUTES: ${LOGIN_LOCK_MINUTES:-15}
+      # How long sign-in attempts stay readable on the Security screen.
+      LOGIN_AUDIT_DAYS: ${LOGIN_AUDIT_DAYS:-90}
+      # Purchase-cost estimate rates, in percent. ITBI is MUNICIPAL — check the
+      # rate for your city; 2% and 3% are both common. Read at runtime (not
+      # NEXT_PUBLIC_, which Next would inline at build time and ignore here).
+      ITBI_PCT: ${ITBI_PCT:-3}
+      DEED_PCT: ${DEED_PCT:-1}
+      REGISTRY_PCT: ${REGISTRY_PCT:-0.8}
       MAX_PARTY_MEMBERS: ${MAX_PARTY_MEMBERS:-6}
       TZ: ${TZ:-America/Sao_Paulo}
       # Lets the app's "Scrape now" button reach the scraper's control API over
@@ -88,6 +110,11 @@ services:
       # Absolute base for the calendar-subscription URL. Only needed when a
       # reverse proxy or tunnel means the request headers are not enough.
       APP_ORIGIN: ${APP_ORIGIN:-}
+      # The photo mirror. Same path in both containers, so it is one setting
+      # rather than two that have to agree. `web` only ever reads it.
+      MEDIA_ROOT: /media
+    volumes:
+      - media:/media:ro
     ports:
       - '${BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-3000}:3000'
     depends_on:
@@ -148,10 +175,62 @@ services:
       # own page, so a second pass opens it. On by default — it reuses the
       # Chromium the scrape already launched — and bounded per run.
       PHOTOS_ENABLED: ${PHOTOS_ENABLED:-true}
-      PHOTOS_MAX_PER_RUN: ${PHOTOS_MAX_PER_RUN:-60}
-      PHOTOS_MIN_IMAGES: ${PHOTOS_MIN_IMAGES:-3}
-      PHOTOS_DELAY_MS: ${PHOTOS_DELAY_MS:-1200}
+      PHOTOS_MAX_PER_RUN: ${PHOTOS_MAX_PER_RUN:-200}
+      # 0 = no gate: every listing gets its page opened once, whatever the search
+      # response already gave us. Set it to N to skip listings that already have
+      # N photos, at the cost of never finding the rest of their album.
+      PHOTOS_MIN_IMAGES: ${PHOTOS_MIN_IMAGES:-0}
+      # 0 = store every photo found. There is no reason to throw away photo 16.
+      PHOTOS_MAX_PER_LISTING: ${PHOTOS_MAX_PER_LISTING:-0}
+      PHOTOS_DELAY_MS: ${PHOTOS_DELAY_MS:-900}
+      PHOTOS_SETTLE_MS: ${PHOTOS_SETTLE_MS:-1200}
       PHOTOS_TIMEOUT_MS: ${PHOTOS_TIMEOUT_MS:-30000}
+      # --- Photo mirror -------------------------------------------------------
+      # Downloads the photo FILES to the shared `media` volume, so a shortlisted
+      # flat's gallery survives the portal expiring its URLs — and so OLX photos
+      # work at all (its CDN refuses the browser's Referer; the scraper can send
+      # the right one because it fetches server-side).
+      MEDIA_ROOT: /media
+      PHOTOS_MIRROR: ${PHOTOS_MIRROR:-true}
+      PHOTOS_MIRROR_MAX_MB: ${PHOTOS_MIRROR_MAX_MB:-2048}
+      PHOTOS_MIRROR_MAX_PER_RUN: ${PHOTOS_MIRROR_MAX_PER_RUN:-400}
+      PHOTOS_MIRROR_DELAY_MS: ${PHOTOS_MIRROR_DELAY_MS:-120}
+      PHOTOS_MIRROR_MAX_FILE_KB: ${PHOTOS_MIRROR_MAX_FILE_KB:-4096}
+      PHOTOS_MIRROR_MAX_FAILURES: ${PHOTOS_MIRROR_MAX_FAILURES:-3}
+      PHOTOS_MIRROR_TIMEOUT_MS: ${PHOTOS_MIRROR_TIMEOUT_MS:-20000}
+      # --- Cleanup ------------------------------------------------------------
+      # Deletes inactive listings NOBODY HAS TOUCHED after this many days, and
+      # reclaims their photo files. A listing with a rating, status, pin, comment
+      # or booked visit is never deleted — see scraper/src/cleanup.ts.
+      # 0 disables deletion entirely.
+      CLEANUP_PURGE_DAYS: ${CLEANUP_PURGE_DAYS:-60}
+      CLEANUP_MAX_PER_RUN: ${CLEANUP_MAX_PER_RUN:-2000}
+      # A closed ad keeps this many mirrored photos; the rest are released back to
+      # the disk budget. One cover is enough to recognise the flat in a shortlist,
+      # and twenty of a place nobody can rent is what fills the budget. 0 keeps all.
+      CLEANUP_ARCHIVE_KEEP: ${CLEANUP_ARCHIVE_KEEP:-1}
+      # Waited out first, because portals re-post: an ad back within the week finds
+      # its gallery intact instead of re-downloading twenty files.
+      CLEANUP_ARCHIVE_DAYS: ${CLEANUP_ARCHIVE_DAYS:-7}
+      # --- Same flat, several ads --------------------------------------------
+      # Groups ads that agree on location, size and layout. Conservative on
+      # purpose: a false merge hides a listing permanently, a missed one is a
+      # visible annoyance. Listings with no coordinates are never clustered.
+      DEDUPE_ENABLED: ${DEDUPE_ENABLED:-true}
+      DEDUPE_RADIUS_M: ${DEDUPE_RADIUS_M:-60}
+      DEDUPE_AREA_PCT: ${DEDUPE_AREA_PCT:-5}
+      DEDUPE_MAX_PER_RUN: ${DEDUPE_MAX_PER_RUN:-5000}
+      # --- Commute times ------------------------------------------------------
+      # OFF by default: it needs a routing provider.
+      #   osrm  self-hosted (docker run osrm/osrm-backend) — free and unlimited
+      #   ors   OpenRouteService, free key covers ~2000/day
+      # The public OSRM demo server is donated infrastructure with a no-heavy-use
+      # policy. Do not point this at it.
+      COMMUTE_PROVIDER: ${COMMUTE_PROVIDER:-none}
+      COMMUTE_ENDPOINT: ${COMMUTE_ENDPOINT:-}
+      COMMUTE_API_KEY: ${COMMUTE_API_KEY:-}
+      COMMUTE_MAX_PER_RUN: ${COMMUTE_MAX_PER_RUN:-200}
+      COMMUTE_DELAY_MS: ${COMMUTE_DELAY_MS:-250}
       # Coordinates for the map, for the portals that publish none. Off by
       # default because Nominatim is donated infrastructure — see src/geocode.ts.
       GEOCODE_ENABLED: ${GEOCODE_ENABLED:-false}
@@ -159,6 +238,9 @@ services:
       GEOCODE_MAX_PER_RUN: ${GEOCODE_MAX_PER_RUN:-25}
       GEOCODE_DELAY_MS: ${GEOCODE_DELAY_MS:-1100}
       GEOCODE_CONTACT: ${GEOCODE_CONTACT:-}
+    volumes:
+      # Read-write here: the scraper is the only writer. `web` mounts it :ro.
+      - media:/media
     depends_on:
       db:
         condition: service_healthy
@@ -184,6 +266,15 @@ services:
 volumes:
   pgdata:
     name: findhome-pgdata
+  # Mirrored listing photos. Written by `scraper`, read by `web`.
+  #
+  # A named volume rather than a bind mount so the ownership set by the images
+  # (uid 1001 in both) is what the volume is initialised with — a host directory
+  # would come in root-owned and the scraper could not write to it.
+  #
+  # Sized by PHOTOS_MIRROR_MAX_MB (2 GB by default), not by the disk.
+  media:
+    name: findhome-media
 
 networks:
   findhome:

@@ -246,7 +246,8 @@ export function mapHit(hit: Hit, ctx: HitContext): RawListing | null {
     bathrooms: toInt(source.bathrooms),
     parkingSpots: toInt(source.parkingSpaces),
     sqm: toInt(source.area ?? source.usableArea),
-    images: unique(photos).slice(0, 12),
+    // Uncapped: the ceiling is applied once, in persist.ts.
+    images: unique(photos),
     amenities,
     // QuintoAndar exposes an explicit flag; fall back to text detection.
     petFriendly:
