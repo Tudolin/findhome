@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import FeedControls from '@/components/FeedControls';
+import FirstSteps from '@/components/FirstSteps';
 import Pagination from '@/components/Pagination';
 import PropertyCard from '@/components/PropertyCard';
 import ScrapeStatus from '@/components/ScrapeStatus';
 import { getDictionary } from '@/lib/i18n/server';
 import { describePreferences } from '@/lib/matching';
-import { parseFilters, parsePage, parsePerPage, parseSort, type RawSearchParams } from '@/lib/feed-params';
-import { getFeed, getFeedFacets, getLastScrapeRuns, isScrapeRunning } from '@/lib/queries';
+import { one, parseFilters, parsePage, parsePerPage, parseSort, type RawSearchParams } from '@/lib/feed-params';
+import { getFeed, getFeedFacets, getLastScrapeRuns, getReviewSummary, isScrapeRunning } from '@/lib/queries';
 import { resolveWorkspace } from '@/lib/workspace';
 import type { UiProperty, UiWorkspace } from '@/lib/types';
 
@@ -19,7 +20,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const sp = await searchParams;
   const [ws, t] = await Promise.all([resolveWorkspace(), getDictionary()]);
 
-  const [feed, runs, scraping, facets] = await Promise.all([
+  const [feed, runs, scraping, facets, progress] = await Promise.all([
     getFeed(ws, {
       ...parseFilters(sp),
       sort: parseSort(sp, 'newest'),
@@ -29,6 +30,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     getLastScrapeRuns(),
     isScrapeRunning(),
     getFeedFacets(ws),
+    // Drives the first-steps checklist. Reuses the "Your homes" summary rather
+    // than counting again — it already answers exactly these questions.
+    getReviewSummary(ws),
   ]);
 
   const workspace: UiWorkspace = {
@@ -55,7 +59,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             </span>
           </div>
           <p className="mt-2 text-sm text-ink-500">
-            {feed.preferences ? describePreferences(feed.preferences) : t.dashboard.noPreferences}
+            {feed.preferences
+              ? // The viewed type, not the saved one — the toolbar's rent/buy
+                // toggle changes what the summary is describing.
+                describePreferences(feed.preferences, one(sp.listingType) === 'SALE' ? 'SALE' : undefined)
+              : t.dashboard.noPreferences}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -72,6 +80,47 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           toolbar on every navigation, which is half of why it stopped
           responding after the first filter change. */}
       <FeedControls facets={facets} basePath="/dashboard" />
+
+      {/* Every step is derived from real state, so the panel empties itself as
+          the app gets used and then stops rendering. See FirstSteps. */}
+      <FirstSteps
+        steps={[
+          {
+            key: 'preferences',
+            title: t.guide.stepPreferences,
+            body: t.guide.stepPreferencesBody,
+            href: '/preferences',
+            done: Boolean(feed.preferences),
+          },
+          {
+            key: 'rate',
+            title: t.guide.stepRate,
+            body: t.guide.stepRateBody,
+            done: progress.rated > 0,
+          },
+          {
+            key: 'shortlist',
+            title: t.guide.stepShortlist,
+            body: t.guide.stepShortlistBody,
+            href: '/my-homes',
+            done: progress.reviewed > 0,
+          },
+          {
+            key: 'party',
+            title: t.guide.stepParty,
+            body: t.guide.stepPartyBody,
+            href: '/co-op#party',
+            done: ws.kind === 'PARTY',
+          },
+          {
+            key: 'visit',
+            title: t.guide.stepVisit,
+            body: t.guide.stepVisitBody,
+            href: '/visits',
+            done: progress.upcomingVisits > 0,
+          },
+        ]}
+      />
 
       <ScrapeStatus runs={runs} running={scraping} />
 

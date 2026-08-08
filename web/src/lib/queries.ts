@@ -430,8 +430,12 @@ function applyFilters(
   // budget, so the toolbar and the saved ceiling never disagree about what
   // "R$ 3.000" means. On a sale that is always `totalPrice`, which holds the
   // asking price alone — `includeCondoInMaxPrice` has nothing to include.
+  //
+  // Keyed on what is being VIEWED, not on what the profile has saved: the two
+  // differ the moment somebody flips the feed's rent/buy toggle.
+  const viewing = f.listingType ?? pref?.listingType;
   const priceField =
-    pref?.listingType !== 'SALE' && pref?.includeCondoInMaxPrice === false ? 'rentPrice' : 'totalPrice';
+    viewing !== 'SALE' && pref?.includeCondoInMaxPrice === false ? 'rentPrice' : 'totalPrice';
   if (f.minPrice) tighten(where, priceField, 'gte', f.minPrice);
   if (f.maxPrice) tighten(where, priceField, 'lte', f.maxPrice);
 
@@ -588,7 +592,17 @@ export async function getFeed(ws: Workspace, opts: FeedOptions = {}): Promise<Fe
   const { sort = 'newest', page: requestedPage = 1, perPage = 24, pinnedFirst = true } = opts;
 
   const pref = opts.ignorePreferences ? null : await getPreferenceProfile(ws);
-  const where: Prisma.PropertyWhereInput = { ...preferenceWhere(pref) };
+
+  /**
+   * Rent or buy, as a *view* rather than a saved setting.
+   *
+   * The URL wins when it says something, so switching is one click and changes
+   * nothing on the profile. `preferenceWhere` needs it because the budget has to
+   * follow — otherwise a Buy view applies the rent ceiling and comes back empty,
+   * which is exactly the trap the split budgets were added to remove.
+   */
+  const viewing = opts.listingType ?? pref?.listingType;
+  const where: Prisma.PropertyWhereInput = { ...preferenceWhere(pref, viewing) };
 
   // `preferenceWhere` always sets `active: true`. Dropping the key rather than
   // setting it to `undefined`, which Prisma treats as "no filter" but which

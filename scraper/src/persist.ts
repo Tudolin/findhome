@@ -3,18 +3,13 @@ import { prisma } from './db.js';
 import { displayName, locationSlug, toUf } from './locations.js';
 import { logger } from './logger.js';
 import { syncPhotoRows } from './media.js';
-import { capPhotos } from './photos.js';
+// The merge rules live in their own module: they are pure, they are the highest
+// -consequence logic in the scraper, and testing them here would have meant
+// importing a Prisma client and Playwright to compare two string arrays.
+import { capPhotos, dedupe, photoUpdate } from './photo-merge.js';
 import type { RawListing } from './types.js';
 
 const log = logger('persist');
-
-/**
- * The photo ceiling lives in photos.ts and is imported rather than repeated, so
- * the search pass and the gallery pass cannot disagree about it. It defaults to
- * *no limit* (PHOTOS_MAX_PER_LISTING=0): a listing with 40 photos should store
- * 40, and the old hard-coded 15 was throwing away two thirds of the album on the
- * portals that publish a lot.
- */
 
 export type PersistResult = {
   found: number;
@@ -22,79 +17,6 @@ export type PersistResult = {
   updated: number;
   skipped: number;
 };
-
-/**
- * Identity of a photo, ignoring the query string.
- *
- * The CDNs decorate the same file with per-request parameters
- * (`?isFirstImage=true`, cache-busting tokens, tracking ids), so a byte-for-byte
- * URL comparison reports "new photo" on every single run for a photo that has not
- * changed. That matters more than it sounds: `photoUpdate` clears
- * `photosFetchedAt` when it sees new photos, so URL churn alone would re-queue
- * those listings for the gallery backfill forever and consume the whole
- * PHOTOS_MAX_PER_RUN budget on listings that are already done — starving the ones
- * that actually need it.
- *
- * The full URL is what gets stored; only the comparison uses this key.
- */
-function photoKey(url: string): string {
-  return url.split('?')[0].split('#')[0];
-}
-
-/** De-duplicates by `photoKey`, keeping the first spelling of each photo. */
-function dedupe(values: string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const url of values) {
-    if (!url) continue;
-    const key = photoKey(url);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(url);
-  }
-  return out;
-}
-
-/**
- * Decides what happens to a listing's photos when it is re-scraped.
- *
- * This is the one place that has to know about the gallery backfill (photos.ts),
- * and getting it wrong is silent and total: a plain `update: data` writes the
- * SEARCH RESULT's photos over whatever is stored, and on OLX, Chaves na Mão and
- * ImovelWeb that is exactly one cover photo. Every backfilled gallery would be
- * destroyed on the next run — and because `photosFetchedAt` is already stamped,
- * it would never be refetched. The carousels would quietly go back to one photo
- * a few hours after being filled.
- *
- * So:
- *   - a smaller incoming set never replaces a larger stored one;
- *   - an incoming set that is genuinely different (the portal re-shot the flat)
- *     wins, and clears the stamp so the backfill enriches the new set;
- *   - an unchanged set touches nothing, so the stamp survives.
- */
-function photoUpdate(
-  incoming: string[],
-  existing: { images: string[]; photosFetchedAt: Date | null },
-): { images?: string[]; photoCount?: number; photosFetchedAt?: Date | null } {
-  const stored = existing.images;
-  const storedKeys = new Set(stored.map(photoKey));
-
-  // Nothing here we do not already have. This is the overwhelmingly common case:
-  // the search result's single cover photo against a backfilled gallery. Keep the
-  // gallery, and — importantly — keep the stamp.
-  if (incoming.every((url) => storedKeys.has(photoKey(url)))) return {};
-
-  // Genuinely new photos. Union rather than replace: the portal reordering its
-  // carousel should not throw away photos the listing page gave us.
-  const merged = capPhotos(dedupe([...incoming, ...stored]));
-  return {
-    images: merged,
-    photoCount: merged.length,
-    // Re-queued for the backfill: the listing really changed, so its page may now
-    // have more than it did the last time we opened it.
-    photosFetchedAt: null,
-  };
-}
 
 function normalize(raw: RawListing) {
   const rentPrice = Math.max(0, Math.round(raw.rentPrice));

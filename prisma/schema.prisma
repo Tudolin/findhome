@@ -256,9 +256,27 @@ model PreferenceProfile {
   citySlug          String   @default("") @map("city_slug")
   neighborhoodSlugs String[] @default([]) @map("neighborhood_slugs")
 
+  /// Which of the two searches below is currently showing. NOT a destructive
+  /// switch any more — see the note on saleMinPrice.
   listingType             ListingType @default(RENT) @map("listing_type")
+
+  /// Rent budget, per month. Kept under the original column names because every
+  /// existing profile's numbers are rent numbers.
   minPrice                Int?        @map("min_price")
   maxPrice                Int?        @map("max_price")
+
+  /**
+   * Purchase budget, held separately from the rent one.
+   *
+   * `listingType` used to be the only switch, and flipping it rewrote the single
+   * budget — so going to see what R$ 600.000 buys destroyed the R$ 3.000 rent
+   * ceiling, and switching back destroyed the purchase one. They are two
+   * different searches with numbers three orders of magnitude apart, and a
+   * household weighing "buy or keep renting" needs both to survive being looked
+   * at.
+   */
+  saleMinPrice            Int?        @map("sale_min_price")
+  saleMaxPrice            Int?        @map("sale_max_price")
   // When true, maxPrice is compared against (rent + condo fee + taxes),
   // otherwise it is compared against the bare rent price.
   includeCondoInMaxPrice  Boolean     @default(true) @map("include_condo_in_max_price")

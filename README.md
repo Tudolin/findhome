@@ -1158,6 +1158,96 @@ safe — the paths either already match or are simply added.
 
 ---
 
+## CI and deploying
+
+```bash
+make check    # typecheck + tests, both services — what CI runs first
+make test     # just the tests
+```
+
+### What CI checks
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), four jobs, fastest first
+so a typo fails in 90 seconds:
+
+| Job | Catches |
+|---|---|
+| **web** | typecheck, unit tests, `next build` — invalid route exports, bad metadata |
+| **scraper** | typecheck, unit tests, `tsc` |
+| **prisma** | migrations apply from scratch **and match `schema.prisma`** |
+| **stack** | `docker compose up --build`, health, routes, an offline scrape |
+
+The Prisma job is the one worth knowing about. Every migration here is
+hand-written SQL, so nothing verified that applying all of them produces the
+`schema.prisma` the client is generated from. `prisma migrate diff --exit-code`
+turns that drift into a build failure instead of a destructive reset offered to
+whoever next runs `migrate dev`.
+
+The **stack** job is the answer to "vai subir?": it builds both images, applies
+every migration against a real Postgres, waits for `/api/health`, checks that the
+public feed renders and that `/dashboard` redirects a signed-out visitor, then
+runs the `DEMO` parser end to end and asserts listings landed in the database. No
+portal is ever contacted from CI.
+
+### The tests
+
+`node:test`, which ships with Node 22 — no test framework added. Run with `tsx`,
+already a dev dependency of both services. Nothing needs a database.
+
+The one to keep is [`web/tests/totp.test.ts`](web/tests/totp.test.ts): `lib/totp.ts`
+is hand-written cryptography guarding the second factor of a publicly reachable
+login, and it cannot be verified by reading. It is checked against the published
+**RFC 6238 test vectors**, so passing means it agrees with Google Authenticator,
+Authy and 1Password by construction rather than by hope.
+
+The rest cover the rules where being wrong is *silent*: a filter that quietly
+widens (repeated URL parameters), a gallery that quietly renders dead URLs, a
+ranking that rewards a lone 5 over two 4s, and
+[`photoUpdate`](scraper/tests/photos.test.ts) — the guard that stops a re-scrape
+overwriting a backfilled gallery with a single cover photo.
+
+### Deploying
+
+**GitHub cannot reach your server, and that is the point.** It sits behind a
+Cloudflare Tunnel or a Tailscale tailnet with no inbound connections
+(see [DEPLOY-PUBLICO.md](DEPLOY-PUBLICO.md)), so any "deploy over SSH" workflow
+would mean punching a hole through the thing that guide spends nine steps closing.
+
+So the pipeline stops at a published image and **the server pulls**:
+
+```bash
+# .env
+FINDHOME_IMAGE=ghcr.io/your-user/findhome   # lower-case; GHCR is case-sensitive
+FINDHOME_TAG=latest
+
+make pull-update              # pull, back up, migrate, restart, wait for health
+make pull-update TAG=v1.4.0   # or pin a version
+```
+
+From cron, if you want it unattended:
+
+```cron
+0 4 * * * cd /home/you/findhome && ./deploy/update.sh >> /tmp/findhome-update.log 2>&1
+```
+
+`update.sh` takes a database dump **before** migrating, never touches the volume,
+and exits non-zero without restarting anything if a migration fails — the old
+containers keep serving.
+
+[`release.yml`](.github/workflows/release.yml) publishes three images to GHCR on
+every push to `main`: `web` and `scraper` (both `runner` targets) and `migrate`
+(the `tools` target, which is the only one with the Prisma CLI and the migrations
+in it).
+
+> There is also [`deploy.yml`](.github/workflows/deploy.yml), which deploys from a
+> **self-hosted runner** on the server. It is opt-in and manual, and the file
+> explains why: a self-hosted runner executes repository code on your machine with
+> your Docker access, which is root-equivalent. Only on a private repo. Cron plus
+> `update.sh` gets you the same result with none of that.
+
+`make update` still exists and still builds locally — right for a machine that is
+not connected to a GitHub repo at all.
+
 ## Everyday commands
 
 ```
@@ -1178,7 +1268,10 @@ make media-clean   delete untouched dead listings and orphaned photo files
 make seed          load demo data
 make backup        dump the database
 make psql          open a SQL prompt
-make update        git pull + rebuild + migrate + restart
+make update        git pull + rebuild LOCALLY + migrate + restart
+make pull-update   pull the images CI published, back up, migrate, restart
+make test          unit tests for both services
+make check         typecheck + tests — what CI runs first
 make prune         reclaim disk from old images and build cache
 ```
 

@@ -249,6 +249,8 @@ export const en = {
     budgetAllIn: 'The ceiling is checked against rent + condo fee + taxes — what actually leaves your account.',
     budgetRentOnly: 'The ceiling is checked against the advertised rent only.',
     quickCeilings: 'Common ceilings',
+    otherBudgetRent: (amount: string) => `Your rent search is kept separately, at up to ${amount}/mo.`,
+    otherBudgetSale: (amount: string) => `Your purchase search is kept separately, at up to ${amount}.`,
     includeCondo: 'Calculate max budget as (Rent + Condo Fee + Taxes)',
     includeCondoHint: 'Turn off to compare against bare rent, ignoring monthly fees.',
     minimum: 'Minimum',
@@ -450,6 +452,7 @@ export const en = {
     selected: (n: number) => `${n} selected`,
     clear: 'Clear selection',
     pickOneMore: 'Pick one more',
+    scrollHint: 'Swipe the table sideways to see every column.',
   },
 
   security: {
@@ -533,6 +536,48 @@ export const en = {
     backToList: '← Back to the listings',
     disclaimer:
       'FindHome collects publicly listed ads from third-party portals and does not broker rentals or sales. Contact is always with whoever placed the ad, on the original listing. Prices and details are the advertiser’s and may be out of date. Trademarks belong to their owners.',
+  },
+
+  onboarding: {
+    title: 'Welcome to FindHome',
+    subtitle: 'Three questions, and your feed is ready. Everything else can be changed later.',
+    subtitleParty: (name: string) => `Setting up the search for ${name}. Three questions and you are done.`,
+    q1: 'Are you renting or buying?',
+    q1Hint: 'You can look at both later — each keeps its own budget.',
+    q2: 'Where?',
+    q2Hint: 'The city you are moving to. Neighbourhoods come later, once you see what is there.',
+    q3: 'Roughly what budget?',
+    q3HintRent: 'Rent plus condo fee and property tax — what actually leaves your account each month.',
+    q3HintSale: 'The asking price. Taxes and fees are shown separately on each listing.',
+    next: 'Next',
+    back: 'Back',
+    finish: 'See my listings',
+    footnote: 'Nothing here is permanent — Preferences has all of it, plus a lot more.',
+  },
+
+  guide: {
+    firstStepsTitle: 'Getting started',
+    firstStepsProgress: (done: number, total: number) => `${done} of ${total} done`,
+    dismiss: 'Hide this',
+    go: 'Open',
+    stepPreferences: 'Fine-tune your search',
+    stepPreferencesBody: 'Neighbourhoods, area, parking, pets — the more you say, the less noise you get.',
+    stepRate: 'Rate a listing',
+    stepRateBody: 'Stars, pros and cons. This is what the ranking is built from.',
+    stepShortlist: 'Check "Your homes"',
+    stepShortlistBody: 'Everything you reacted to, in one place that does not move around.',
+    stepParty: 'Search with someone',
+    stepPartyBody: 'One shared shortlist, two opinions side by side.',
+    stepVisit: 'Book a viewing',
+    stepVisitBody: 'It lands in your calendar, and in theirs.',
+  },
+
+  share: {
+    share: 'Share',
+    copied: 'Copied ✓',
+    shareList: (n: number) => `Share ${n} listing${n === 1 ? '' : 's'}`,
+    listHeading: (n: number, workspace: string) => `${n} listing${n === 1 ? '' : 's'} — ${workspace}`,
+    seeInApp: 'See them in FindHome:',
   },
 
   common: {

@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import AppShell from '@/components/AppShell';
+import { getPreferenceProfile } from '@/lib/queries';
 import { listWorkspaces, resolveWorkspace } from '@/lib/workspace';
 import { getSession } from '@/lib/auth';
 import { isTheme, THEME_COOKIE, type Theme } from '@/lib/theme';
@@ -19,6 +20,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const stored = store.get(THEME_COOKIE)?.value;
   const theme: Theme = isTheme(stored) ? stored : 'system';
+
+  /**
+   * First run goes through the wizard.
+   *
+   * Without a profile the feed has nothing to filter by and the scraper has
+   * nothing to search for, so a new account landed on an empty Discovery page —
+   * which is where most people conclude the app is broken. The absence of the
+   * profile row IS the "not onboarded yet" flag; finishing the wizard writes it
+   * and this check stops firing. No extra column, no way to get out of step.
+   *
+   * Checked here rather than in middleware because it needs the database, which
+   * the Edge runtime cannot reach. `/onboarding` sits OUTSIDE this route group, so
+   * this layout never runs for it and the redirect cannot loop.
+   */
+  if (!(await getPreferenceProfile(active))) redirect('/onboarding');
 
   // The shell wraps the content rather than sitting above it: the left padding
   // has to follow the rail's collapsed state, and that is client state.

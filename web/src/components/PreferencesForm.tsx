@@ -17,6 +17,8 @@ type FormState = {
   listingType: 'RENT' | 'SALE';
   minPrice: number;
   maxPrice: number;
+  saleMinPrice: number;
+  saleMaxPrice: number;
   includeCondoInMaxPrice: boolean;
   minBedrooms: number;
   minBathrooms: number;
@@ -64,8 +66,11 @@ function initial(profile: PreferenceProfile | null): FormState {
     state: profile?.state ?? '',
     neighborhoods: profile?.neighborhoods ?? [],
     listingType,
+    // Both budgets, always. Neither is touched by switching the view.
     minPrice: profile?.minPrice ?? 0,
-    maxPrice: profile?.maxPrice ?? BUDGET[listingType].defaultMax,
+    maxPrice: profile?.maxPrice ?? (listingType === 'RENT' ? BUDGET.RENT.defaultMax : 0),
+    saleMinPrice: profile?.saleMinPrice ?? 0,
+    saleMaxPrice: profile?.saleMaxPrice ?? (listingType === 'SALE' ? BUDGET.SALE.defaultMax : 0),
     includeCondoInMaxPrice: profile?.includeCondoInMaxPrice ?? true,
     minBedrooms: profile?.minBedrooms ?? 0,
     minBathrooms: profile?.minBathrooms ?? 0,
@@ -120,30 +125,23 @@ export default function PreferencesForm({
   const forSale = form.listingType === 'SALE';
 
   /**
-   * Switching rent <-> buy has to move the budget with it.
+   * Switching rent <-> buy is now only a change of *view*.
    *
-   * Leaving it alone is what made Buy look broken: the profile kept a R$ 5.000
-   * ceiling, which as a purchase price matches nothing anywhere, and the feed
-   * came back empty with no hint as to why. A budget that is out of range for the
-   * new mode is replaced by that mode's default; one that already makes sense
-   * (someone typed R$ 700.000 and then toggled twice) is left alone.
+   * It used to rewrite the single shared budget, so looking at what R$ 600.000
+   * buys destroyed the R$ 3.000 rent ceiling and switching back destroyed the
+   * purchase one. Both are stored now (`saleMinPrice`/`saleMaxPrice`), so this
+   * touches nothing but which pair is on screen.
    */
   function switchListingType(type: 'RENT' | 'SALE') {
     if (type === form.listingType) return;
-    const next = BUDGET[type];
-    const plausible = form.maxPrice > 0 && form.maxPrice <= next.ceiling && form.maxPrice >= next.presets[0] / 4;
-
-    setForm((f) => ({
-      ...f,
-      listingType: type,
-      maxPrice: plausible ? f.maxPrice : next.defaultMax,
-      minPrice: plausible ? f.minPrice : 0,
-      // "Include the condo fee in the ceiling" is a rent-only idea — there is
-      // nothing to include in an asking price.
-      includeCondoInMaxPrice: type === 'RENT' ? f.includeCondoInMaxPrice : false,
-    }));
+    setForm((f) => ({ ...f, listingType: type }));
     setSaved(false);
   }
+
+  /** The budget fields for whichever mode is showing. */
+  const budgetKeys = forSale
+    ? ({ min: 'saleMinPrice', max: 'saleMaxPrice' } as const)
+    : ({ min: 'minPrice', max: 'maxPrice' } as const);
 
   /** Slugs already chosen, so suggestions and duplicates agree with the server. */
   const chosenSlugs = useMemo(() => new Set(form.neighborhoods.map(locationSlug)), [form.neighborhoods]);
@@ -189,8 +187,11 @@ export default function PreferencesForm({
       await savePreferences({
         ...form,
         state: form.state || null,
+        // 0 in the UI means "no bound"; the columns are nullable.
         minPrice: form.minPrice || null,
         maxPrice: form.maxPrice || null,
+        saleMinPrice: form.saleMinPrice || null,
+        saleMaxPrice: form.saleMaxPrice || null,
         alertWhatsapp: form.alertWhatsapp.trim() || null,
         commuteAddress: form.commuteAddress.trim() || null,
         // 0 in the select means "do not filter on it"; the column is nullable.
@@ -212,7 +213,12 @@ export default function PreferencesForm({
    * plausible span, so on Buy one pixel is worth several thousand reais and
    * "R$ 640.000" is not reachable by dragging. Typing it is.
    */
-  const budgetField = (key: 'minPrice' | 'maxPrice', label: string, emptyLabel: string, suffix?: string) => (
+  const budgetField = (
+    key: 'minPrice' | 'maxPrice' | 'saleMinPrice' | 'saleMaxPrice',
+    label: string,
+    emptyLabel: string,
+    suffix?: string,
+  ) => (
     <div>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 text-sm">
         <span className="font-medium">{label}</span>
@@ -263,7 +269,7 @@ export default function PreferencesForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      <div className="card p-6">
+      <div className="card card-p">
         <h2 className="mb-4 text-sm font-semibold">{t.preferences.location}</h2>
 
         <div className="grid gap-4 sm:grid-cols-3">
@@ -372,7 +378,7 @@ export default function PreferencesForm({
         </div>
       </div>
 
-      <div className="card p-6">
+      <div className="card card-p">
         <h2 className="mb-1 text-sm font-semibold">
           {forSale ? t.preferences.budgetSale : t.preferences.budget}
         </h2>
@@ -401,14 +407,24 @@ export default function PreferencesForm({
         )}
 
         <div className="grid gap-5 sm:grid-cols-2">
-          {budgetField('minPrice', t.preferences.minimum, t.preferences.noMinimum)}
+          {budgetField(budgetKeys.min, t.preferences.minimum, t.preferences.noMinimum)}
           {budgetField(
-            'maxPrice',
+            budgetKeys.max,
             t.preferences.maximum,
             t.preferences.noMaximum,
             forSale ? undefined : form.includeCondoInMaxPrice ? t.preferences.allIn : t.preferences.rentOnly,
           )}
         </div>
+
+        {/* The other search is still there, and saying so is the whole point of
+            splitting the two — otherwise it looks like switching wiped it. */}
+        {(forSale ? form.maxPrice : form.saleMaxPrice) > 0 && (
+          <p className="mt-3 text-xs text-ink-400">
+            {forSale
+              ? t.preferences.otherBudgetRent(money(form.maxPrice))
+              : t.preferences.otherBudgetSale(money(form.saleMaxPrice))}
+          </p>
+        )}
 
         {/* One tap for the common budgets. The slider alone is fine for rent and
             hopeless for a purchase: at R$ 10.000 a step, hitting R$ 640.000 on a
@@ -420,28 +436,28 @@ export default function PreferencesForm({
               <button
                 key={value}
                 type="button"
-                onClick={() => set('maxPrice', value)}
-                className={clsx('tag-toggle', form.maxPrice === value && 'tag-toggle-on')}
+                onClick={() => set(budgetKeys.max, value)}
+                className={clsx('tag-toggle', form[budgetKeys.max] === value && 'tag-toggle-on')}
               >
                 {money(value)}
               </button>
             ))}
             <button
               type="button"
-              onClick={() => set('maxPrice', 0)}
-              className={clsx('tag-toggle', form.maxPrice === 0 && 'tag-toggle-on')}
+              onClick={() => set(budgetKeys.max, 0)}
+              className={clsx('tag-toggle', form[budgetKeys.max] === 0 && 'tag-toggle-on')}
             >
               {t.preferences.noMaximum}
             </button>
           </div>
         </div>
 
-        {form.minPrice > form.maxPrice && form.maxPrice > 0 && (
+        {form[budgetKeys.min] > form[budgetKeys.max] && form[budgetKeys.max] > 0 && (
           <p className="mt-3 text-xs text-warning">{t.preferences.swapWarning}</p>
         )}
       </div>
 
-      <div className="card p-6">
+      <div className="card card-p">
         <h2 className="mb-4 text-sm font-semibold">{t.preferences.specs}</h2>
 
         <div className="grid gap-5 sm:grid-cols-3">
@@ -496,7 +512,7 @@ export default function PreferencesForm({
       {/* The filter that actually decides where people live, and the one no
           portal offers. Off unless an address is entered — routing needs a
           provider, and an empty box is how you say "I don't care". */}
-      <div className="card p-6">
+      <div className="card card-p">
         <h2 className="mb-1 text-sm font-semibold">{t.preferences.commute}</h2>
         <p className="mb-4 text-xs text-ink-500">{t.preferences.commuteHint}</p>
 
@@ -552,7 +568,7 @@ export default function PreferencesForm({
         )}
       </div>
 
-      <div className="card p-6">
+      <div className="card card-p">
         <h2 className="mb-1 text-sm font-semibold">{t.alerts.title}</h2>
         <p className="mb-4 text-xs text-ink-500">{t.alerts.subtitle}</p>
 

@@ -87,7 +87,7 @@ export default async function PublicListingPage({ params }: { params: Params }) 
           <div className="space-y-6">
             <PhotoCarousel images={displayImages(listing)} alt={listing.title} />
 
-            <div className="card p-6">
+            <div className="card card-p">
               <h1 className="text-xl font-black leading-tight tracking-tight text-ink-900">{listing.title}</h1>
               <p className="mt-2 text-sm text-ink-600">
                 {listing.address} · {listing.neighborhood} · {listing.city}
@@ -126,7 +126,7 @@ export default async function PublicListingPage({ params }: { params: Params }) 
           </div>
 
           <div className="space-y-6">
-            <div className="card p-6">
+            <div className="card card-p">
               <p className="text-3xl font-black tracking-tight text-ink-900">{money(listing.totalPrice)}</p>
               <p className="mt-1 text-sm text-ink-500">
                 {forSale ? t.card.askingPrice : t.card.perMonth}
@@ -151,7 +151,7 @@ export default async function PublicListingPage({ params }: { params: Params }) 
 
             {/* Where the right-hand column would be. Not a blurred fake of the
                 real thing — a plain statement of what the account is for. */}
-            <div className="card p-6">
+            <div className="card card-p">
               <h2 className="text-sm font-bold text-ink-800">{t.public.gatedTitle}</h2>
               <ul className="mt-4 grid gap-2 text-sm text-ink-600">
                 {[

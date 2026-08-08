@@ -1,0 +1,273 @@
+name: CI
+
+# The gate this repository was missing.
+#
+# Both services are TypeScript compiled inside Docker, the Prisma migrations are
+# hand-written SQL, and the only way anyone found out whether a change built was
+# to run `docker compose up --build` on the server and watch. That is a slow,
+# expensive and late way to learn that a type is wrong.
+#
+# Four independent checks, fastest first, so a typo fails in 90 seconds and the
+# ten-minute stack test only runs when the cheap things pass.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # So a red main can be re-run after fixing infrastructure, without a commit.
+  workflow_dispatch:
+
+# A new push to the same branch cancels the previous run. CI on an abandoned
+# commit is minutes of runner time spent on an answer nobody will read.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  web:
+    name: web — typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package.json
+
+      # `npm ci` needs a lockfile and this repo does not commit one — the
+      # Dockerfiles fall back the same way, so CI installs exactly as the image
+      # does rather than testing a different resolution.
+      - name: Install
+        working-directory: web
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      # The client has to exist before tsc runs: half of lib/ imports its types,
+      # and without it every Prisma type resolves to `any` and the typecheck
+      # passes while proving nothing.
+      - name: Generate Prisma client
+        working-directory: web
+        run: npx prisma generate --schema=../prisma/schema.prisma
+
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: web
+        run: npm test
+
+      # `next build` runs its own typecheck over the route tree, catches invalid
+      # exports (`dynamic`, `runtime`, metadata) that tsc alone accepts, and is
+      # the closest thing to "will the image build".
+      - name: Build
+        working-directory: web
+        run: npm run build
+        env:
+          # Neither is used at build time, but the modules that read them are
+          # imported during prerender and throw on a missing secret.
+          JWT_SECRET: build-time-placeholder-not-a-real-secret-32ch
+          DATABASE_URL: postgresql://findhome:findhome@localhost:5432/findhome
+
+  # ---------------------------------------------------------------------------
+  scraper:
+    name: scraper — typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: scraper/package.json
+
+      - name: Install
+        working-directory: scraper
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Generate Prisma client
+        working-directory: scraper
+        run: npx prisma generate --schema=../prisma/schema.prisma
+
+      - name: Typecheck
+        working-directory: scraper
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: scraper
+        run: npm test
+
+      - name: Build
+        working-directory: scraper
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  prisma:
+    name: prisma — migrations apply and match the schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: findhome
+          POSTGRES_PASSWORD: findhome
+          POSTGRES_DB: findhome
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U findhome"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://findhome:findhome@localhost:5432/findhome
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package.json
+
+      - name: Install
+        working-directory: web
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Schema is valid
+        run: npx prisma validate --schema=prisma/schema.prisma
+        working-directory: web
+
+      # Every migration, in order, against an empty database. Catches a typo in
+      # hand-written SQL, a column referenced before it is added, and an index on
+      # a table that does not exist yet.
+      - name: Migrations apply from scratch
+        working-directory: web
+        run: npx prisma migrate deploy --schema=../prisma/schema.prisma
+
+      # The check that matters most here.
+      #
+      # These migrations are hand-written, so nothing has ever verified that
+      # applying all of them produces the schema.prisma the Prisma client is
+      # generated from. Drift is silent until someone runs `migrate dev` months
+      # later and is offered a destructive reset. `--exit-code` makes a difference
+      # a build failure.
+      - name: No drift between migrations and schema.prisma
+        working-directory: web
+        run: |
+          npx prisma migrate diff \
+            --from-migrations ../prisma/migrations \
+            --to-schema-datamodel ../prisma/schema.prisma \
+            --shadow-database-url "$DATABASE_URL" \
+            --exit-code \
+          || {
+            echo "::error::schema.prisma and prisma/migrations disagree."
+            echo "The migrations above would have to be applied to reach schema.prisma."
+            echo "Either the schema was edited without a migration, or a migration is incomplete."
+            exit 1
+          }
+
+  # ---------------------------------------------------------------------------
+  stack:
+    name: stack — it actually boots
+    runs-on: ubuntu-latest
+    # Chromium and the Playwright system libraries make the scraper image slow to
+    # build from cold. Worth it: this is the job that answers "vai subir?".
+    timeout-minutes: 40
+    # Only after the cheap checks pass — no point spending 20 minutes building
+    # images for a branch with a type error.
+    needs: [web, scraper, prisma]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Real secrets, not the placeholders in .env.example: JWT_SECRET is
+      # length-checked at runtime and compose refuses to start without a password.
+      - name: Write a throwaway .env
+        run: |
+          cp .env.example .env
+          {
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "JWT_SECRET=$(openssl rand -base64 48)"
+            echo "SCRAPE_CONTROL_TOKEN=$(openssl rand -hex 24)"
+            # The offline parser: no network calls, deterministic listings. The
+            # portals must never be hit from CI.
+            echo "SCRAPE_SOURCES=DEMO"
+            echo "SCRAPE_ON_START=false"
+            echo "PHOTOS_ENABLED=false"
+            echo "PHOTOS_MIRROR=false"
+            echo "BIND_ADDRESS=127.0.0.1"
+          } >> .env
+
+      - name: Build and start
+        run: docker compose up -d --build
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/api/health | grep -q '"database":"up"'; then
+              echo "healthy after ${i}0s"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::the app never became healthy"
+          docker compose ps
+          docker compose logs --tail=200
+          exit 1
+
+      # Every check below is a route that has to work for anyone to use the app,
+      # and each has broken at least once in a way typechecking cannot see.
+      - name: Public feed renders
+        run: |
+          curl -fsS http://127.0.0.1:3000/ -o /dev/null
+          curl -fsS http://127.0.0.1:3000/login -o /dev/null
+          # A signed-out visitor must be bounced off a protected route.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/dashboard)
+          [ "$code" = "307" ] || [ "$code" = "302" ] || {
+            echo "::error::/dashboard returned $code for a signed-out visitor, expected a redirect"; exit 1;
+          }
+
+      - name: Migrations left the database usable
+        run: |
+          docker compose exec -T db psql -U findhome -d findhome -c '\dt' | tee /tmp/tables.txt
+          for table in properties users sessions property_photos property_price_events login_attempts; do
+            grep -q "$table" /tmp/tables.txt || {
+              echo "::error::table $table is missing after migrate"; exit 1;
+            }
+          done
+
+      # The whole pipeline end to end — parser, de-duplication, persistence — with
+      # no external site involved.
+      - name: Offline scrape writes listings
+        run: |
+          docker compose exec -T scraper node dist/cli.js DEMO
+          count=$(docker compose exec -T db psql -U findhome -d findhome -tAc 'SELECT count(*) FROM properties')
+          echo "listings: $count"
+          [ "$count" -gt 0 ] || { echo "::error::the DEMO scrape stored nothing"; exit 1; }
+
+      - name: The doctor runs
+        run: docker compose exec -T scraper node dist/doctor.js DEMO
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail=300
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,38 @@
+# Run the images CI published, instead of building on the server.
+#
+#   docker compose -f docker-compose.yml -f deploy/ghcr-compose.yml up -d
+#   # or, simply:
+#   ./deploy/update.sh
+#
+# Set FINDHOME_IMAGE in .env to your repository, lower-cased — GHCR paths are
+# case-sensitive and `docker pull` on the wrong case fails with a 403 that reads
+# like an auth problem:
+#
+#   FINDHOME_IMAGE=ghcr.io/seu-usuario/findhome
+#   FINDHOME_TAG=latest        # or a version tag, to pin
+#
+# `pull_policy: always` so `up -d` picks up a rebuilt `latest` without anyone
+# having to remember `docker compose pull` first.
+#
+# The `migrate` one-shot deliberately uses the WEB image: it is the same
+# Dockerfile with a different target, so migrations always ship with the code
+# that expects them.
+
+services:
+  # Its own image, built from the web Dockerfile's `tools` target — the `runner`
+  # image is the standalone Next build and has neither the Prisma CLI nor the
+  # migrations. Its CMD is already `prisma migrate deploy`.
+  migrate:
+    image: ${FINDHOME_IMAGE:?set FINDHOME_IMAGE in .env}/migrate:${FINDHOME_TAG:-latest}
+    pull_policy: always
+    build: !reset null
+
+  web:
+    image: ${FINDHOME_IMAGE:?set FINDHOME_IMAGE in .env}/web:${FINDHOME_TAG:-latest}
+    pull_policy: always
+    build: !reset null
+
+  scraper:
+    image: ${FINDHOME_IMAGE:?set FINDHOME_IMAGE in .env}/scraper:${FINDHOME_TAG:-latest}
+    pull_policy: always
+    build: !reset null

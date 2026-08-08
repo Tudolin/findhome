@@ -9,4 +9,11 @@ backups
 .env
 .env.local
 README.md
+DEPLOY-PUBLICO.md
 deploy
+landing
+# Tests run in CI, not in the image. Keeping them out also means `next build`
+# inside Docker does not typecheck them — CI already did, against the same
+# tsconfig, and the image has no test runner to run them with.
+**/tests
+

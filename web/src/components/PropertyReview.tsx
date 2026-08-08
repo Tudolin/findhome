@@ -71,7 +71,7 @@ export default function PropertyReview({
 
   return (
     <div className="space-y-5">
-      <div className="card p-6">
+      <div className="card card-p">
         <div className="mb-5 flex items-center justify-between gap-3">
           <h2 className="text-sm font-bold text-ink-800">{t.property.yourReview}</h2>
           <div className="flex items-center gap-2">
@@ -144,7 +144,7 @@ export default function PropertyReview({
       </div>
 
       {workspace.kind === 'PARTY' && (
-        <div className="card p-6">
+        <div className="card card-p">
           <h2 className="mb-4 text-sm font-bold text-ink-800">Side by side</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             {workspace.members.map((member) => {

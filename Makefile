@@ -13,7 +13,7 @@ export
 .PHONY: help setup up down restart build rebuild logs logs-web logs-scraper ps \
         migrate seed scrape scrape-now scrape-demo doctor shell-db psql backup \
         restore update prune status scrape-status photos photos-stats \
-        mirror media-clean media-status
+        mirror media-clean media-status test check pull-update
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -113,8 +113,20 @@ restore: ## Restore from a dump:  make restore FILE=backups/findhome-....sql.gz
 	@test -n "$(FILE)" || { echo "Usage: make restore FILE=backups/findhome-....sql.gz"; exit 1; }
 	gunzip -c "$(FILE)" | $(COMPOSE) exec -T db psql -U $${POSTGRES_USER:-findhome} -d $${POSTGRES_DB:-findhome}
 
-update: ## Pull the latest code, rebuild, migrate and restart
+update: ## Pull the latest code, rebuild LOCALLY, migrate and restart
 	git pull --ff-only && $(COMPOSE) up -d --build && $(COMPOSE) run --rm migrate
+
+pull-update: ## Same, but pull the images CI published instead of building: make pull-update [TAG=v1.4.0]
+	./deploy/update.sh $(if $(TAG),--tag $(TAG),)
+
+test: ## Run the unit tests for both services (no database needed)
+	@echo "--- web ---"     && cd web     && npm test
+	@echo "--- scraper ---" && cd scraper && npm test
+
+check: ## Everything CI checks, locally: typecheck + tests, both services
+	@echo "--- web ---"     && cd web     && npm run typecheck && npm test
+	@echo "--- scraper ---" && cd scraper && npm run typecheck && npm test
+	@echo "OK. `make up` or push to run the full stack test."
 
 prune: ## Reclaim disk from old images and build cache
 	docker image prune -f && docker builder prune -f

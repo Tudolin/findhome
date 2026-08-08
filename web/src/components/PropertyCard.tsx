@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import clsx from 'clsx';
 import type { InteractionStatus } from '@prisma/client';
 import { money, sourceLabel } from '@/lib/format';
@@ -22,6 +22,19 @@ const QUICK_STATUSES: InteractionStatus[] = ['INTERESTED', 'FAVORITE', 'VISIT_SC
 export default function PropertyCard({ property, workspace }: { property: UiProperty; workspace: UiWorkspace }) {
   const t = useT();
   const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+
+  /**
+   * The feed's own URL, handed to the listing page as `?from=`.
+   *
+   * Without it, "← Voltar" was a hard-coded `/dashboard` and every filter was
+   * lost the moment you opened a listing — twenty seconds of narrowing thrown
+   * away by one click, which is the bug people describe as "os filtros somem".
+   */
+  const query = params.toString();
+  const from = encodeURIComponent(query ? `${pathname}?${query}` : pathname);
+  const detailHref = `/property/${property.id}?from=${from}`;
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +101,7 @@ export default function PropertyCard({ property, workspace }: { property: UiProp
       <div className="p-3 pb-0">
         <div className="relative">
           <Link
-            href={`/property/${property.id}`}
+            href={detailHref}
             className="relative block aspect-[4/3] overflow-hidden rounded-xl bg-surface-sunken shadow-neu-inset-sm"
           >
             {/* galleryFor, not images[0]: the locally mirrored copy when there is
@@ -168,7 +181,7 @@ export default function PropertyCard({ property, workspace }: { property: UiProp
         <div>
           <div className="mb-1.5 flex items-start justify-between gap-2">
             <Link
-              href={`/property/${property.id}`}
+              href={detailHref}
               className="line-clamp-2 text-sm font-bold leading-snug text-ink-800 hover:text-brand-700"
             >
               {property.title}
@@ -333,7 +346,7 @@ export default function PropertyCard({ property, workspace }: { property: UiProp
           </div>
 
           <div className="flex items-center justify-between text-[11px] font-semibold">
-            <Link href={`/property/${property.id}`} className="text-brand-700 hover:text-brand-800">
+            <Link href={detailHref} className="text-brand-700 hover:text-brand-800">
               {t.card.details}
               {property.commentCount > 0 && ` · ${property.commentCount} 💬`}
             </Link>

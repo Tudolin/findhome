@@ -154,8 +154,15 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
         </Link>
       </div>
 
+      {/* The table scrolls sideways on a phone, which is the right answer for a
+          comparison — stacking it into cards would put the numbers you are
+          comparing on different screens, which is the one thing this page exists
+          to avoid. The hint says so, because a table that scrolls with no
+          affordance reads as a table that is cut off. */}
+      <p className="text-xs text-ink-400 sm:hidden">{t.compare.scrollHint}</p>
+
       <div className="card overflow-x-auto p-0">
-        <table className="w-full min-w-[640px] border-collapse">
+        <table className="w-full min-w-[560px] border-collapse">
           <thead>
             <tr>
               <th className="w-40 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-ink-500">

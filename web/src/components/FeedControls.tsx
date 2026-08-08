@@ -104,8 +104,13 @@ export default function FeedControls({
   const [expanded, setExpanded] = useState(activeExtras > 0);
   const [hoodQuery, setHoodQuery] = useState('');
 
-  /** Rent and purchase need different price controls entirely. */
-  const forSale = facets.listingType === 'SALE';
+  /**
+   * Rent and purchase need different price controls entirely.
+   *
+   * Read from the URL first: the toggle above changes the view immediately, and
+   * the steps have to follow it in the same render rather than after a round trip.
+   */
+  const forSale = (params.get('listingType') ?? facets.listingType) === 'SALE';
   const priceSteps = PRICE_STEPS[forSale ? 'SALE' : 'RENT'];
 
   /** Submits the form the control belongs to. */
@@ -263,6 +268,42 @@ export default function FeedControls({
           <input key={`${key}-${index}`} type="hidden" name={key} value={value} />
         )),
       )}
+
+      {/**
+       * Rent / Buy, as a view switch.
+       *
+       * Two saved budgets sit behind it (see PreferenceProfile.saleMinPrice), so
+       * flipping here changes what you are looking at and nothing else — it used
+       * to be a setting on the profile that overwrote the other search's numbers.
+       *
+       * Radios, not a select: two mutually exclusive options that change the whole
+       * screen deserve to both be visible, and this is the control people will
+       * reach for most.
+       */}
+      <div className="mb-3 flex w-fit gap-1 rounded-xl p-1 shadow-neu-inset-sm">
+        {(['RENT', 'SALE'] as const).map((type) => {
+          const on = (params.get('listingType') ?? facets.listingType) === type;
+          return (
+            <label
+              key={type}
+              className={clsx(
+                'cursor-pointer select-none rounded-lg px-4 py-2 text-sm font-bold transition-all duration-150 ease-neu',
+                on ? 'bg-surface text-brand-700 shadow-neu-sm' : 'text-ink-500 hover:text-ink-700',
+              )}
+            >
+              <input
+                type="radio"
+                name="listingType"
+                value={type}
+                defaultChecked={on}
+                onChange={submit}
+                className="sr-only"
+              />
+              {type === 'RENT' ? t.preferences.rent : t.preferences.buy}
+            </label>
+          );
+        })}
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex min-w-[16rem] flex-1 gap-2">

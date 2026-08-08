@@ -4,8 +4,11 @@ import CommentThread from '@/components/CommentThread';
 import PhotoCarousel from '@/components/PhotoCarousel';
 import PropertyReview from '@/components/PropertyReview';
 import ScoreBadge from '@/components/ScoreBadge';
+import ShareButton from '@/components/ShareButton';
 import VisitScheduler from '@/components/VisitScheduler';
 import VisitTime from '@/components/VisitTime';
+import { appOrigin } from '@/lib/origin';
+import { one, type RawSearchParams } from '@/lib/feed-params';
 import { money, relativeDate, sourceLabel } from '@/lib/format';
 import { galleryFor } from '@/lib/media';
 import { entryCost } from '@/lib/costs';
@@ -27,9 +30,15 @@ export async function generateMetadata({ params }: { params: Params }) {
   return { title: property ? `${property.title} · FindHome` : 'Property · FindHome' };
 }
 
-export default async function PropertyPage({ params }: { params: Params }) {
+export default async function PropertyPage({
+  params,
+  searchParams,
+}: {
+  params: Params;
+  searchParams: Promise<RawSearchParams>;
+}) {
   const { id } = await params;
-  const [ws, t] = await Promise.all([resolveWorkspace(), getDictionary()]);
+  const [ws, t, sp] = await Promise.all([resolveWorkspace(), getDictionary(), searchParams]);
   const property = await getPropertyDetail(ws, id);
   if (!property) notFound();
 
@@ -58,6 +67,29 @@ export default async function PropertyPage({ params }: { params: Params }) {
     `${property.address}, ${property.neighborhood}, ${property.city}`,
   )}`;
 
+  /**
+   * Where "← Voltar" goes.
+   *
+   * It used to be a hard-coded `/dashboard`, which threw away the entire query
+   * string — so opening a listing after twenty seconds of filtering and coming
+   * back landed on an unfiltered feed. Cards now pass the feed's own URL through
+   * as `?from=`, and this sends you exactly where you were.
+   *
+   * Only same-origin relative paths are honoured: `from` arrives from the URL and
+   * would otherwise be an open redirect.
+   */
+  const from = one(sp.from);
+  const backHref = from && from.startsWith('/') && !from.startsWith('//') ? from : '/dashboard';
+
+  /**
+   * The link people share.
+   *
+   * `/imovel/<id>` rather than `/property/<id>`: the public page works for anyone,
+   * signed in or not, and redirects a signed-in visitor to the full version. A
+   * `/property/` link sent to someone without an account is a login wall.
+   */
+  const shareUrl = `${await appOrigin()}/imovel/${property.id}`;
+
   const specs: Array<[string, string | number]> = [
     [t.property.bedrooms, property.bedrooms],
     [t.property.bathrooms, property.bathrooms],
@@ -66,14 +98,30 @@ export default async function PropertyPage({ params }: { params: Params }) {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 lg:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/dashboard" className="btn-ghost">
+        {/* `backHref`, not a bare /dashboard. Coming back from a listing used to
+            drop every filter, because this link threw the query string away — see
+            the note on `backHref` above. */}
+        <Link href={backHref} className="btn-ghost">
           {t.property.back}
         </Link>
         <div className="flex items-center gap-3">
           {ws.kind === 'PARTY' && <ScoreBadge score={property.partyScore} />}
-          <a href={property.sourceUrl} target="_blank" rel="noreferrer" className="btn-ghost">
+          <ShareButton
+            url={shareUrl}
+            title={property.title}
+            text={`${property.title} — ${money(property.totalPrice)}`}
+            className="btn-ghost"
+          />
+          {/* Hidden on a phone: it is duplicated in the sticky bar at the bottom,
+              which is where a thumb is. */}
+          <a
+            href={property.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="btn-ghost hidden sm:inline-flex"
+          >
             {t.property.openOn(sourceLabel(property.source))}
           </a>
         </div>
@@ -110,7 +158,7 @@ export default async function PropertyPage({ params }: { params: Params }) {
             </div>
           )}
 
-          <div className="card p-6">
+          <div className="card card-p">
             <h1 className="text-xl font-black leading-tight tracking-tight text-ink-900">{property.title}</h1>
             <p className="mt-2 text-sm text-ink-600">
               {property.address} · {property.neighborhood} · {property.city}
@@ -157,7 +205,7 @@ export default async function PropertyPage({ params }: { params: Params }) {
             </p>
           </div>
 
-          <div className="card p-6">
+          <div className="card card-p">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-sm font-bold text-ink-800">📅 {t.visits.title}</h2>
               <Link href="/visits" className="text-xs font-semibold text-brand-700 hover:text-brand-800">
@@ -183,7 +231,7 @@ export default async function PropertyPage({ params }: { params: Params }) {
             <VisitScheduler propertyId={property.id} />
           </div>
 
-          <div className="card p-6">
+          <div className="card card-p">
             <CommentThread
               propertyId={property.id}
               comments={property.comments}
@@ -199,7 +247,7 @@ export default async function PropertyPage({ params }: { params: Params }) {
               purchase the asking price stands alone and the fees are what you go
               on paying every month after buying — presenting them as a sum was
               how a R$ 650.000 flat ended up labelled R$ 651.200 "per month". */}
-          <div className="card p-6">
+          <div className="card card-p">
             <h2 className="mb-4 text-sm font-bold text-ink-800">
               {forSale ? t.property.saleBreakdown : t.property.priceBreakdown}
             </h2>
@@ -269,7 +317,7 @@ export default async function PropertyPage({ params }: { params: Params }) {
               leaves your account. Rates are configurable and labelled as an
               estimate, because ITBI is municipal and genuinely varies. */}
           {forSale && (
-            <div className="card p-6">
+            <div className="card card-p">
               <h2 className="mb-1 text-sm font-bold text-ink-800">{t.property.entryCost}</h2>
               <p className="mb-4 text-xs text-ink-500">{t.property.entryCostHint}</p>
 
@@ -306,6 +354,33 @@ export default async function PropertyPage({ params }: { params: Params }) {
 
           <PropertyReview propertyId={property.id} mine={mine} others={others} workspace={workspace} />
         </div>
+      </div>
+
+      {/**
+       * Mobile action bar.
+       *
+       * The two things you do from this screen — open the original ad and send it
+       * to whoever you are moving in with — were at the very top, above a photo
+       * carousel, a spec table, a price breakdown and a review form. On a phone
+       * that is four screens of scrolling away by the time you have decided.
+       *
+       * `bottom-16` clears the tab bar; `env(safe-area-inset-bottom)` clears the
+       * home indicator under it.
+       */}
+      <div
+        className="fixed inset-x-0 bottom-16 z-20 flex gap-2 border-t border-ink-200/20 bg-surface/95 px-4 py-3 backdrop-blur lg:hidden"
+        style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+      >
+        <ShareButton
+          url={shareUrl}
+          title={property.title}
+          text={`${property.title} — ${money(property.totalPrice)}`}
+          className="btn-ghost shrink-0"
+          compact
+        />
+        <a href={property.sourceUrl} target="_blank" rel="noreferrer" className="btn-primary flex-1">
+          {t.property.openOn(sourceLabel(property.source))}
+        </a>
       </div>
     </div>
   );

@@ -6,6 +6,9 @@ import { config } from './config.js';
 import { prisma } from './db.js';
 import { logger } from './logger.js';
 import { syncPhotoRows } from './media.js';
+// One definition of "same photo", shared with persist.ts. It used to be a copy in
+// each file with a comment on both saying they had to agree.
+import { capPhotos, MAX_PHOTOS, photoKey } from './photo-merge.js';
 
 const log = logger('photos');
 
@@ -80,14 +83,9 @@ const MAX_PER_RUN = Math.max(0, int(process.env.PHOTOS_MAX_PER_RUN, 200));
 const MIN_IMAGES = Math.max(0, int(process.env.PHOTOS_MIN_IMAGES, 0));
 /** Politeness delay between listing pages. */
 const DELAY_MS = Math.max(200, int(process.env.PHOTOS_DELAY_MS, 900));
-/** Photos stored per listing. 0 = no limit, which is the default. */
-export const MAX_PHOTOS = Math.max(0, int(process.env.PHOTOS_MAX_PER_LISTING, 0));
 const NAV_TIMEOUT_MS = Math.max(10_000, int(process.env.PHOTOS_TIMEOUT_MS, 30_000));
 /** How long to let a lazy carousel finish after the scroll. */
 const SETTLE_MS = Math.max(0, int(process.env.PHOTOS_SETTLE_MS, 1200));
-
-/** Applies MAX_PHOTOS, treating 0 as "no limit". */
-export const capPhotos = <T>(values: T[]): T[] => (MAX_PHOTOS > 0 ? values.slice(0, MAX_PHOTOS) : values);
 
 /**
  * Sources with no listing page to open. Everything else is visited — including
@@ -162,14 +160,6 @@ function keep(url: string): boolean {
 
   return IMAGE_EXT.test(url) || PHOTO_HOSTS.some((host) => url.includes(host)) || MEDIA_PATH.test(url);
 }
-
-/**
- * Identity of a photo, ignoring the query string — the same rule as `photoKey`
- * in persist.ts, and for the same reason: these CDNs decorate one file with
- * per-request parameters, so comparing full URLs stores the same photo three
- * times and fills the carousel with duplicates.
- */
-const photoKey = (url: string) => url.split('?')[0].split('#')[0];
 
 /**
  * Runs inside the page. Returns raw candidate URLs; every decision about what to

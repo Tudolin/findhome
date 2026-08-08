@@ -12,8 +12,12 @@ const schema = z.object({
   state: z.string().trim().max(40).nullish(),
   neighborhoods: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
   listingType: z.enum(['RENT', 'SALE']).default('RENT'),
+  // Two independent budgets. `listingType` chooses which one is showing; it no
+  // longer overwrites the other. See the note on PreferenceProfile.saleMinPrice.
   minPrice: z.number().int().min(0).max(10_000_000).nullable().default(null),
   maxPrice: z.number().int().min(0).max(10_000_000).nullable().default(null),
+  saleMinPrice: z.number().int().min(0).max(100_000_000).nullable().default(null),
+  saleMaxPrice: z.number().int().min(0).max(100_000_000).nullable().default(null),
   includeCondoInMaxPrice: z.boolean().default(true),
   minBedrooms: z.number().int().min(0).max(10).default(0),
   minBathrooms: z.number().int().min(0).max(10).default(0),
@@ -55,8 +59,13 @@ export const PUT = handler(async (req: Request) => {
   const ws = await resolveWorkspace(url.searchParams.get('workspace'));
   const input = schema.parse(await req.json());
 
+  // Both pairs, independently — swapping only the visible one would leave the
+  // other inverted and silently matching nothing.
   if (input.minPrice != null && input.maxPrice != null && input.minPrice > input.maxPrice) {
     [input.minPrice, input.maxPrice] = [input.maxPrice, input.minPrice];
+  }
+  if (input.saleMinPrice != null && input.saleMaxPrice != null && input.saleMinPrice > input.saleMaxPrice) {
+    [input.saleMinPrice, input.saleMaxPrice] = [input.saleMaxPrice, input.saleMinPrice];
   }
 
   // Canonicalisation happens here and only here. The client sends what the user

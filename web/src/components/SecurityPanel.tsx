@@ -174,7 +174,7 @@ export default function SecurityPanel({
       </div>
 
       {/* One password box for the whole screen. Every action below reads it. */}
-      <div className="card p-6">
+      <div className="card card-p">
         <label className="label" htmlFor="stepup">
           {t.security.confirmPassword}
         </label>
@@ -202,7 +202,7 @@ export default function SecurityPanel({
       </div>
 
       {/* --- Two-factor -------------------------------------------------- */}
-      <section className="card p-6">
+      <section className="card card-p">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-ink-800">{t.security.twoFactor}</h2>
@@ -308,7 +308,7 @@ export default function SecurityPanel({
       </section>
 
       {/* --- Devices ----------------------------------------------------- */}
-      <section className="card p-6">
+      <section className="card card-p">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-ink-800">{t.security.devices}</h2>
@@ -347,7 +347,7 @@ export default function SecurityPanel({
       </section>
 
       {/* --- Password ---------------------------------------------------- */}
-      <section className="card p-6">
+      <section className="card card-p">
         <h2 className="text-sm font-bold text-ink-800">{t.security.changePassword}</h2>
         <p className="mt-1 text-xs text-ink-500">
           {passwordChangedAt ? t.security.lastChanged(when(passwordChangedAt)) : t.security.neverChanged}
@@ -391,7 +391,7 @@ export default function SecurityPanel({
       </section>
 
       {/* --- Activity ---------------------------------------------------- */}
-      <section className="card p-6">
+      <section className="card card-p">
         <h2 className="text-sm font-bold text-ink-800">{t.security.activity}</h2>
         <p className="mt-1 text-xs text-ink-500">{t.security.activityHint(lockoutThreshold, lockoutMinutes)}</p>
 

@@ -76,6 +76,19 @@ const nextConfig = {
     unoptimized: true,
     remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },
+  /**
+   * Client router cache.
+   *
+   * Next 15 defaults `dynamic` to 0, so every back navigation to a
+   * `force-dynamic` page is a full server round trip — which on a phone is a
+   * visible blank-then-repaint every time you close a listing and return to the
+   * feed. Thirty seconds is short enough that a rating made on the detail page is
+   * never stale for long (the mutation calls `router.refresh()` anyway, which
+   * invalidates this) and long enough that browsing back and forth feels instant.
+   */
+  experimental: {
+    staleTimes: { dynamic: 30, static: 180 },
+  },
   eslint: { ignoreDuringBuilds: true },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];

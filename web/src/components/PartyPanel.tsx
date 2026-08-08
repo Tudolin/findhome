@@ -31,14 +31,48 @@ export default function PartyPanel({ activeParty }: { activeParty: ActiveParty |
     }
   }
 
-  function copy(kind: 'code' | 'link') {
+  /**
+   * Copy the code or the invite link.
+   *
+   * `navigator.clipboard` alone was the bug: it is HTTPS-only, and this app is
+   * routinely reached over `http://192.168.x.x`, where the API is simply absent —
+   * so the button did nothing at all, silently, on exactly the deployment it was
+   * written for. The `execCommand` path is deprecated and is the only thing that
+   * works there.
+   */
+  async function copy(kind: 'code' | 'link') {
     if (!activeParty) return;
     const text =
       kind === 'code' ? activeParty.inviteCode : `${window.location.origin}/register?invite=${activeParty.inviteCode}`;
-    void navigator.clipboard.writeText(text).then(() => {
+
+    const flash = () => {
       setCopied(kind);
       setTimeout(() => setCopied(null), 2000);
-    });
+    };
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        flash();
+        return;
+      }
+    } catch {
+      // Insecure context or permission denied — fall through.
+    }
+
+    const scratch = document.createElement('textarea');
+    scratch.value = text;
+    scratch.setAttribute('readonly', '');
+    scratch.style.position = 'fixed';
+    scratch.style.opacity = '0';
+    document.body.appendChild(scratch);
+    scratch.select();
+    try {
+      document.execCommand('copy');
+      flash();
+    } finally {
+      document.body.removeChild(scratch);
+    }
   }
 
   async function onLeave() {
@@ -61,7 +95,7 @@ export default function PartyPanel({ activeParty }: { activeParty: ActiveParty |
   return (
     <div id="party" className="grid gap-5 md:grid-cols-2">
       {activeParty && (
-        <div className="card p-6 md:col-span-2">
+        <div className="card card-p md:col-span-2">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="text-base font-bold text-ink-800">{activeParty.name}</h2>
@@ -120,7 +154,44 @@ export default function PartyPanel({ activeParty }: { activeParty: ActiveParty |
         </div>
       )}
 
-      <div className="card p-6">
+      {/**
+       * What a "party" is, before asking anyone to make one.
+       *
+       * The word means nothing on first sight, and the two buttons underneath were
+       * asking people to commit to a concept they had not been told. Shown only
+       * when they are not already in one — once you have a party, you know.
+       */}
+      {!activeParty && (
+        <div className="card card-p md:col-span-2">
+          <h2 className="text-base font-bold text-ink-800">Procurando com outra pessoa?</h2>
+          <p className="mt-2 max-w-2xl text-sm text-ink-600">
+            Uma <strong>party</strong> é um espaço compartilhado: as preferências de busca passam a ser as mesmas, e
+            cada um dá a sua própria nota, seus prós e seus contras em cada imóvel. A nota da party premia
+            <em> concordância</em> — um 4 dos dois vale mais que um 5 de um só.
+          </p>
+          <ul className="mt-4 grid gap-2 text-sm text-ink-600 sm:grid-cols-2">
+            {[
+              'Uma lista só, com as duas opiniões lado a lado',
+              'Quadro por etapa: interessado → visita → proposta',
+              'Conversa por imóvel, em vez de print no WhatsApp',
+              'Sua busca individual continua existindo, intacta',
+            ].map((line) => (
+              <li key={line} className="flex items-start gap-2">
+                <span aria-hidden className="mt-0.5 font-black text-brand-500">
+                  ✓
+                </span>
+                {line}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-xs text-ink-400">
+            Você cria a party, copia o link e manda para a pessoa. Ela entra pelo link — sem precisar entender nada
+            disso.
+          </p>
+        </div>
+      )}
+
+      <div className="card card-p">
         <h2 className="mb-1.5 text-sm font-bold text-ink-800">Create a party</h2>
         <p className="mb-4 text-xs text-ink-500">
           A shared workspace with its own preferences, board and notes. Your solo search stays untouched.
@@ -145,7 +216,7 @@ export default function PartyPanel({ activeParty }: { activeParty: ActiveParty |
         </div>
       </div>
 
-      <div className="card p-6">
+      <div className="card card-p">
         <h2 className="mb-1.5 text-sm font-bold text-ink-800">Join a party</h2>
         <p className="mb-4 text-xs text-ink-500">Enter the invite code someone shared with you.</p>
         <div className="flex gap-2">

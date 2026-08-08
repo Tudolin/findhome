@@ -15,13 +15,30 @@ import { locationSlug, ufToStateName } from './locations';
  * ceiling is checked against `total_price` (rent + condo + taxes), which is what
  * people actually pay each month. When disabled it is checked against bare rent.
  */
-export function preferenceWhere(pref: PreferenceProfile | null): Prisma.PropertyWhereInput {
+export function preferenceWhere(
+  pref: PreferenceProfile | null,
+  /**
+   * The type actually being viewed, when the feed's own toggle overrides the
+   * saved one.
+   *
+   * This is what makes rent and purchase two views of one profile rather than a
+   * destructive switch: the *budget* has to follow whichever is showing, or a Buy
+   * view silently applies the R$ 3.000 rent ceiling and comes back empty.
+   */
+  viewing?: 'RENT' | 'SALE',
+): Prisma.PropertyWhereInput {
   if (!pref) return { active: true };
 
+  const listingType = viewing ?? pref.listingType;
+  const forSale = listingType === 'SALE';
+
+  const minPrice = forSale ? pref.saleMinPrice : pref.minPrice;
+  const maxPrice = forSale ? pref.saleMaxPrice : pref.maxPrice;
+
   const price: Prisma.IntFilter = {};
-  if (pref.minPrice != null) price.gte = pref.minPrice;
-  if (pref.maxPrice != null) price.lte = pref.maxPrice;
-  const hasPriceFilter = pref.minPrice != null || pref.maxPrice != null;
+  if (minPrice != null) price.gte = minPrice;
+  if (maxPrice != null) price.lte = maxPrice;
+  const hasPriceFilter = minPrice != null || maxPrice != null;
 
   // Derived rather than read straight off the row, so a profile written before
   // the slug columns existed (or by a seed script) still filters correctly.
@@ -32,7 +49,7 @@ export function preferenceWhere(pref: PreferenceProfile | null): Prisma.Property
 
   const where: Prisma.PropertyWhereInput = {
     active: true,
-    listingType: pref.listingType,
+    listingType,
     ...(citySlug ? { citySlug } : {}),
     ...(neighborhoodSlugs.length ? { neighborhoodSlug: { in: neighborhoodSlugs } } : {}),
     bedrooms: { gte: pref.minBedrooms },
@@ -55,7 +72,7 @@ export function preferenceWhere(pref: PreferenceProfile | null): Prisma.Property
     // "all-in" — `totalPrice` IS the asking price for a SALE row (see
     // normalize() in scraper/src/persist.ts) — so the flag is ignored rather
     // than honoured on a field where it would mean nothing.
-    if (pref.listingType === 'SALE') where.totalPrice = price;
+    if (forSale) where.totalPrice = price;
     else if (pref.includeCondoInMaxPrice) where.totalPrice = price;
     else where.rentPrice = price;
   }
@@ -70,20 +87,26 @@ export function preferenceWhere(pref: PreferenceProfile | null): Prisma.Property
 }
 
 /** Human-readable summary of the active filter, shown above the feed. */
-export function describePreferences(pref: PreferenceProfile | null): string {
+export function describePreferences(
+  pref: PreferenceProfile | null,
+  viewing?: 'RENT' | 'SALE',
+): string {
   if (!pref) return 'No preferences set yet — showing every listing.';
 
-  const forSale = pref.listingType === 'SALE';
+  const forSale = (viewing ?? pref.listingType) === 'SALE';
   const place = [pref.city, pref.state].filter(Boolean).join('/');
   const parts: string[] = [pref.neighborhoods.length ? `${pref.neighborhoods.join(', ')} · ${place}` : place];
 
   parts.push(forSale ? 'for sale' : 'to rent');
 
-  if (pref.maxPrice != null) {
+  // The budget of whichever search is showing — the other one is untouched and
+  // irrelevant here.
+  const maxPrice = forSale ? pref.saleMaxPrice : pref.maxPrice;
+  if (maxPrice != null) {
     // No "all-in" / "rent only" qualifier on a sale: there is nothing to include,
     // and saying "R$ 800.000 all-in" reads as though the fees were folded in.
     const qualifier = forSale ? '' : ` ${pref.includeCondoInMaxPrice ? 'all-in' : 'rent only'}`;
-    parts.push(`up to R$ ${pref.maxPrice.toLocaleString('pt-BR')}${qualifier}`);
+    parts.push(`up to R$ ${maxPrice.toLocaleString('pt-BR')}${qualifier}`);
   }
   if (pref.minBedrooms) parts.push(`${pref.minBedrooms}+ bed`);
   if (pref.minParkingSpots) parts.push(`${pref.minParkingSpots}+ parking`);

@@ -1,0 +1,62 @@
+version: 2
+
+# Grouped and monthly on purpose.
+#
+# This is a two-person household app, not a product with a security team. A
+# separate PR for every patch bump produces a wall of notifications nobody reads,
+# which is how the *important* update — the one CI would have caught breaking —
+# gets rubber-stamped along with forty others.
+#
+# So: one PR per ecosystem per month, with major bumps split out because those are
+# the ones that need a human. CI runs on every one of them, which is the point —
+# a dependency PR that goes red has already earned its keep.
+
+updates:
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Next, React and Prisma majors are migrations, not updates. Do them
+      # deliberately, with the release notes open.
+      - dependency-name: 'next'
+        update-types: [version-update:semver-major]
+      - dependency-name: 'react'
+        update-types: [version-update:semver-major]
+      - dependency-name: 'react-dom'
+        update-types: [version-update:semver-major]
+      - dependency-name: '@prisma/client'
+        update-types: [version-update:semver-major]
+      - dependency-name: 'prisma'
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: npm
+    directory: /scraper
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # PLAYWRIGHT_VERSION in scraper/Dockerfile has to match this exactly —
+      # playwright-core looks for a browser build pinned to its own version and a
+      # mismatch fails at launch, not at build. Bump both together, by hand.
+      - dependency-name: 'playwright-core'
+
+  - package-ecosystem: docker
+    directory: /web
+    schedule: { interval: monthly }
+
+  - package-ecosystem: docker
+    directory: /scraper
+    schedule: { interval: monthly }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups:
+      actions:
+        patterns: ['*']

@@ -249,6 +249,8 @@ export const pt: Dict = {
     budgetAllIn: 'O teto é comparado com aluguel + condomínio + IPTU — o que realmente sai da sua conta.',
     budgetRentOnly: 'O teto é comparado apenas com o aluguel anunciado.',
     quickCeilings: 'Tetos comuns',
+    otherBudgetRent: (amount: string) => `Sua busca de aluguel fica guardada à parte, em até ${amount}/mês.`,
+    otherBudgetSale: (amount: string) => `Sua busca de compra fica guardada à parte, em até ${amount}.`,
     includeCondo: 'Calcular o teto como (Aluguel + Condomínio + IPTU)',
     includeCondoHint: 'Desligue para comparar só com o aluguel, ignorando as taxas mensais.',
     minimum: 'Mínimo',
@@ -453,6 +455,7 @@ export const pt: Dict = {
     selected: (n: number) => `${n} selecionado${n === 1 ? '' : 's'}`,
     clear: 'Limpar seleção',
     pickOneMore: 'Escolha mais um',
+    scrollHint: 'Arraste a tabela para o lado para ver todas as colunas.',
   },
 
   security: {
@@ -536,6 +539,48 @@ export const pt: Dict = {
     backToList: '← Voltar para a lista',
     disclaimer:
       'O FindHome reúne anúncios públicos de portais de terceiros e não intermedeia locação nem venda. O contato é sempre com quem anunciou, no anúncio original. Preços e informações são do anunciante e podem estar desatualizados. Marcas citadas pertencem aos seus donos.',
+  },
+
+  onboarding: {
+    title: 'Bem-vindo ao FindHome',
+    subtitle: 'Três perguntas e o seu feed está pronto. Todo o resto dá para mudar depois.',
+    subtitleParty: (name: string) => `Configurando a busca de ${name}. Três perguntas e acabou.`,
+    q1: 'Você quer alugar ou comprar?',
+    q1Hint: 'Depois dá para ver os dois — cada um guarda o seu próprio orçamento.',
+    q2: 'Onde?',
+    q2Hint: 'A cidade para onde você vai. Bairros ficam para depois, quando você vir o que tem.',
+    q3: 'Mais ou menos quanto?',
+    q3HintRent: 'Aluguel + condomínio + IPTU — o que realmente sai da sua conta todo mês.',
+    q3HintSale: 'O valor do imóvel. Impostos e taxas aparecem separados em cada anúncio.',
+    next: 'Próximo',
+    back: 'Voltar',
+    finish: 'Ver meus imóveis',
+    footnote: 'Nada aqui é definitivo — em Preferências tem tudo isso e bem mais.',
+  },
+
+  guide: {
+    firstStepsTitle: 'Primeiros passos',
+    firstStepsProgress: (done: number, total: number) => `${done} de ${total} feitos`,
+    dismiss: 'Esconder isto',
+    go: 'Abrir',
+    stepPreferences: 'Ajuste a sua busca',
+    stepPreferencesBody: 'Bairros, área, vaga, pet — quanto mais você disser, menos ruído aparece.',
+    stepRate: 'Dê nota a um imóvel',
+    stepRateBody: 'Estrelas, prós e contras. É disso que o ranking é feito.',
+    stepShortlist: 'Veja "Seus apartamentos"',
+    stepShortlistBody: 'Tudo o que você avaliou, num lugar que não fica se mexendo.',
+    stepParty: 'Procure junto com alguém',
+    stepPartyBody: 'Uma lista só, com as duas opiniões lado a lado.',
+    stepVisit: 'Marque uma visita',
+    stepVisitBody: 'Ela cai no seu calendário, e no da outra pessoa.',
+  },
+
+  share: {
+    share: 'Compartilhar',
+    copied: 'Copiado ✓',
+    shareList: (n: number) => `Compartilhar ${n} ${n === 1 ? 'imóvel' : 'imóveis'}`,
+    listHeading: (n: number, workspace: string) => `${n} ${n === 1 ? 'imóvel' : 'imóveis'} — ${workspace}`,
+    seeInApp: 'Ver no FindHome:',
   },
 
   common: {

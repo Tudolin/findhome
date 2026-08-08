@@ -1,0 +1,132 @@
+name: Release
+
+# Publishes the two runtime images to GHCR.
+#
+# ## Why publishing, and not deploying
+#
+# The server this runs on sits behind a Cloudflare Tunnel or a Tailscale tailnet
+# — see DEPLOY-PUBLICO.md — which is to say it accepts **no inbound connections
+# at all**. That is the entire point of those setups, and it means GitHub cannot
+# reach it to deploy. Any workflow that claims to would need a port forward,
+# undoing the security decision the deployment guide is built around.
+#
+# So the pipeline stops at a published image and the server pulls. Two ways to
+# consume it, both outbound-only:
+#
+#   deploy/update.sh   a cron job on the server: pull, migrate, restart
+#   a self-hosted runner   polls GitHub over HTTPS; see .github/workflows/deploy.yml
+#
+# Building here rather than on the server is worth it on its own: the laptop stops
+# spending ten minutes and a gigabyte of RAM compiling Chromium dependencies every
+# time you change a label.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      # What lets GITHUB_TOKEN push to GHCR. No PAT to create or rotate.
+      packages: write
+
+    strategy:
+      # Both images are published or neither is useful, but letting one finish
+      # while the other fails makes the failure easier to read.
+      fail-fast: false
+      matrix:
+        include:
+          - service: web
+            dockerfile: web/Dockerfile
+            target: runner
+          - service: scraper
+            dockerfile: scraper/Dockerfile
+            target: runner
+          # A third image, from the SAME Dockerfile's `tools` target.
+          #
+          # The `runner` target is the Next.js standalone build: no Prisma CLI, no
+          # migrations directory. Reusing it for the migrate one-shot would fail
+          # at `prisma migrate deploy` on the server, after the images had already
+          # been pulled. `tools` is the stage that has both, and publishing it
+          # keeps migrations shipping with the code that expects them.
+          - service: migrate
+            dockerfile: web/Dockerfile
+            target: tools
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both Dockerfiles take the REPOSITORY ROOT as their context, because
+      # /prisma is shared between the two services.
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache in the Actions cache. Without it every run rebuilds the
+          # Playwright system libraries from scratch, which is most of the time.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+          # amd64 only. arm64 would double the build time and this is deployed on
+          # one laptop; add linux/arm64 here if that laptop is Apple silicon.
+          platforms: linux/amd64
+
+  # ---------------------------------------------------------------------------
+  summary:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: How to deploy this
+        run: |
+          {
+            echo "## Images published"
+            echo
+            echo '```'
+            echo "${{ env.REGISTRY }}/${{ github.repository }}/web:latest"
+            echo "${{ env.REGISTRY }}/${{ github.repository }}/scraper:latest"
+            echo '```'
+            echo
+            echo "### On the server"
+            echo '```bash'
+            echo "cd ~/findhome && ./deploy/update.sh"
+            echo '```'
+            echo
+            echo "GitHub cannot reach a machine behind a tunnel, so the server pulls."
+            echo "See the note at the top of .github/workflows/release.yml."
+          } >> "$GITHUB_STEP_SUMMARY"

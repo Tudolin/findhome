@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import CompareGrid from '@/components/CompareGrid';
 import FeedControls from '@/components/FeedControls';
+import ShareList from '@/components/ShareList';
 import Pagination from '@/components/Pagination';
 import StatusTabs, { type StatusTab } from '@/components/StatusTabs';
 import { money } from '@/lib/format';
@@ -120,8 +121,23 @@ export default async function MyHomesPage({ searchParams }: { searchParams: Sear
           </div>
           <p className="mt-2 max-w-2xl text-sm text-ink-500">{t.myHomes.subtitle}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="chip-raised tabular-nums">{t.dashboard.count(feed.total)}</span>
+          {/* The listings on screen, as a WhatsApp message with the portals' own
+              links — see ShareList for why it is text and not a share URL. */}
+          <ShareList
+            listings={feed.items.map((item) => ({
+              id: item.id,
+              title: item.title,
+              neighborhood: item.neighborhood,
+              city: item.city,
+              totalPrice: item.totalPrice,
+              bedrooms: item.bedrooms,
+              sqm: item.sqm,
+              sourceUrl: item.sourceUrl,
+            }))}
+            heading={t.share.listHeading(feed.items.length, ws.name)}
+          />
           <Link href="/co-op" className="btn-ghost">
             {t.myHomes.openBoard}
           </Link>

@@ -144,7 +144,17 @@
 @layer components {
   /* ---- surfaces ------------------------------------------------------- */
   .card {
-    @apply rounded-2xl bg-surface shadow-neu;
+    /* `min-w-0` on every card: a card is almost always a grid or flex child, and
+       the default `min-width: auto` lets one long word — a URL, an email, an
+       unbroken listing title — push the whole track wider than the viewport.
+       That is the single most common source of horizontal scroll on a phone, and
+       fixing it at the source beats chasing it per screen. */
+    @apply min-w-0 rounded-2xl bg-surface shadow-neu;
+  }
+  /* Standard card padding: tighter on a phone, where 24px on each side of a
+     360px screen is a tenth of the width spent on nothing. */
+  .card-p {
+    @apply p-4 sm:p-6;
   }
   .card-flat {
     @apply rounded-2xl bg-surface shadow-neu-sm;
@@ -219,6 +229,16 @@
 }
 
 @layer utilities {
+  /**
+   * Anything that can arrive as one unbroken string: a URL, an email, an
+   * external id, a pasted address. `anywhere` rather than `break-all` so normal
+   * prose still breaks at spaces and only the offending token is split.
+   */
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   /* Semantic tints. Kept as pressed wells so coloured state never breaks the
      single-surface rule; the colour lives in the text, not a filled block. */
   .tint-pro {
@@ -226,6 +246,39 @@
   }
   .tint-con {
     @apply bg-surface text-danger shadow-neu-inset-sm;
+  }
+}
+
+/**
+ * Touch targets.
+ *
+ * `pointer: coarse` is a finger, not a mouse. The WCAG 2.5.5 floor is 44×44 CSS
+ * pixels and the design's default button is ~36px tall — fine under a cursor,
+ * a source of mis-taps under a thumb. Raised only where it matters, so the
+ * desktop density is untouched.
+ *
+ * `select` and `input` are included because a mis-tapped filter is the same
+ * frustration as a mis-tapped button, and the neumorphic controls give no
+ * hit-area feedback to say you missed.
+ */
+@media (pointer: coarse) {
+  .btn,
+  .btn-primary,
+  .btn-ghost,
+  .btn-danger {
+    @apply min-h-[44px];
+  }
+
+  .input,
+  select.input {
+    @apply min-h-[44px];
+  }
+
+  /* Chips are content, not controls — except when they are a toggle. */
+  .tag-toggle,
+  .pressed-on,
+  .pressed-off {
+    @apply min-h-[36px];
   }
 }
 
