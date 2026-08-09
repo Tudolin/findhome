@@ -1,8 +1,8 @@
 name: Deploy
-
-# OPT-IN. Does nothing until you register a self-hosted runner on the server.
+# Runs automatically on every push to main, and can also be triggered manually
+# with a specific image tag via workflow_dispatch.
 #
-# ## Why this is opt-in and not the default
+# ## Why this needs a self-hosted runner
 #
 # The server accepts no inbound connections — it is behind a Cloudflare Tunnel or
 # a Tailscale tailnet on purpose (DEPLOY-PUBLICO.md). GitHub therefore cannot
@@ -19,37 +19,31 @@ name: Deploy
 #   * It runs as whatever user installed it, with that user's Docker access —
 #     which is root-equivalent.
 #
-# If that trade is not one you want, do not enable this. `deploy/update.sh` from
-# cron achieves the same thing with none of it, and is what the README recommends.
-#
 # ## To enable
 #
 #   1. Settings → Actions → Runners → New self-hosted runner, on the server.
 #   2. Give it the label `findhome-server`.
 #   3. Run it as a service:  sudo ./svc.sh install && sudo ./svc.sh start
-#   4. Actions → Deploy → Run workflow.
-
+#   4. Push to main, or trigger manually via Actions → Deploy → Run workflow.
 on:
-  # Deliberately manual. An automatic deploy on every push to main is how a
-  # laptop restarts mid-evening because someone fixed a typo in the README.
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       tag:
         description: 'Image tag to deploy (latest, or a version like v1.4.0)'
         required: false
         default: 'latest'
-
 concurrency:
   group: deploy
   cancel-in-progress: false
-
 jobs:
   deploy:
     # No runner with this label = the job queues and never starts, which is the
     # correct behaviour for something nobody has opted into.
     runs-on: [self-hosted, findhome-server]
     timeout-minutes: 20
-
     steps:
       # The working copy on the server, not a fresh checkout: .env lives there and
       # must never be in the repository.
@@ -58,8 +52,7 @@ jobs:
           cd "${FINDHOME_DIR:-$HOME/findhome}"
           git fetch --all --prune
           git reset --hard origin/main
-          ./deploy/update.sh --tag "${{ inputs.tag }}"
-
+          ./deploy/update.sh --tag "${{ inputs.tag || 'latest' }}"
       - name: What is running
         if: always()
         run: |
