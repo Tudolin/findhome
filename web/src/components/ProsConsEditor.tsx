@@ -119,7 +119,7 @@ export default function ProsConsEditor({
   );
 
   return (
-    <div className="grid gap-6 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
       {section('pros', 'Pros', pros, QUICK_PROS, draftPro, setDraftPro)}
       {section('cons', 'Cons', cons, QUICK_CONS, draftCon, setDraftCon)}
     </div>

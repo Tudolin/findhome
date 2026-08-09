@@ -118,7 +118,7 @@ export default async function PublicHome({ searchParams }: { searchParams: Searc
             <p className="mx-auto mt-2 max-w-md text-sm text-ink-500">{t.public.emptyBody}</p>
           </div>
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {feed.listings.map((listing) => (
               <PublicCard key={listing.id} listing={listing} t={t} />
             ))}
@@ -130,7 +130,7 @@ export default async function PublicHome({ searchParams }: { searchParams: Searc
           <section className="relative mt-6">
             {/* Real listings, blurred. They are `aria-hidden` and unclickable —
                 decoration that shows there is more, not content. */}
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {feed.teasers.map((listing) => (
                 <PublicCard key={listing.id} listing={listing} t={t} blurred />
               ))}

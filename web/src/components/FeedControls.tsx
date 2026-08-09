@@ -1,9 +1,9 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { sourceLabel } from '@/lib/format';
+import { money, sourceLabel } from '@/lib/format';
 import { locationSlug } from '@/lib/locations';
 import { countActiveFilters, FEED_SORTS, FEED_STATUSES } from '@/lib/feed-params';
 import type { FeedFacets } from '@/lib/queries';
@@ -101,8 +101,61 @@ export default function FeedControls({
   const droppedOnly = params.get('droppedOnly') === 'true';
 
   const activeExtras = countActiveFilters(Object.fromEntries(collect(params)));
-  const [expanded, setExpanded] = useState(activeExtras > 0);
+
+  /**
+   * Whether the panel is open — remembered per device, per screen.
+   *
+   * It cannot be plain `useState`. The form carries `key={params.toString()}` so
+   * every `defaultValue` re-seeds from the URL, which means React **remounts the
+   * whole component on every filter change** and any local state initialiser runs
+   * again. Opening the panel and then touching the sort or the rent/buy toggle
+   * collapsed it, every single time.
+   *
+   * localStorage survives the remount. Keyed on `basePath` so Discovery and Your
+   * homes remember independently — they are different tasks with different
+   * filters.
+   */
+  const storageKey = `fh_filters_open:${basePath}`;
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(storageKey);
+    // No stored preference: open it only if something is already filtering, so a
+    // first visit is not a wall of controls.
+    setExpanded(stored === null ? activeExtras > 0 : stored === '1');
+    // `activeExtras` deliberately absent: this decides the INITIAL state after a
+    // remount. Including it would slam the panel shut the moment you cleared the
+    // last filter while it was open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+
+  function togglePanel() {
+    setExpanded((open) => {
+      window.localStorage.setItem(storageKey, open ? '0' : '1');
+      return !open;
+    });
+  }
+
   const [hoodQuery, setHoodQuery] = useState('');
+
+  /**
+   * The URL with one value of one parameter removed.
+   *
+   * `hrefWith` replaces a key wholesale, which is wrong for the multi-selects —
+   * removing "Batel" must leave "Água Verde" alone. `page` is dropped too: a
+   * narrower search has fewer pages, and staying on page 4 of a one-page result
+   * is how a working filter looks broken.
+   */
+  function without(key: string, value?: string): string {
+    const next = new URLSearchParams();
+    params.forEach((v, k) => {
+      if (k === 'page') return;
+      if (k === key && (value === undefined || v === value)) return;
+      next.append(k, v);
+    });
+    const query = next.toString();
+    return query ? `${basePath}?${query}` : basePath;
+  }
 
   /**
    * Rent and purchase need different price controls entirely.
@@ -111,6 +164,87 @@ export default function FeedControls({
    * the steps have to follow it in the same render rather than after a round trip.
    */
   const forSale = (params.get('listingType') ?? facets.listingType) === 'SALE';
+
+  /**
+   * Everything currently narrowing the feed, as removable chips.
+   *
+   * This is what lets the panel stay shut. Before, a filter you set yesterday was
+   * invisible until you reopened the panel and hunted for the field that was not
+   * empty — so the panel had to be open to be trustworthy, and an open panel is
+   * most of a screen. Naming the active filters on one line removes the reason to
+   * keep it open.
+   *
+   * `sort` and `listingType` are absent on purpose: they choose *which* feed you
+   * are looking at rather than narrowing it, they are never "off", and a chip that
+   * cannot be removed is noise.
+   */
+  const activeChips = useMemo(() => {
+    const out: Array<{ id: string; label: string; href: string }> = [];
+    const add = (key: string, label: string, value?: string) =>
+      out.push({ id: `${key}:${value ?? ''}`, label, href: without(key, value) });
+
+    const one = (key: string, render: (value: string) => string) => {
+      const value = params.get(key);
+      if (value) add(key, render(value));
+    };
+
+    /**
+     * Same, for the keys whose value is a number.
+     *
+     * The query string is user input: `?minPrice=abc` would otherwise render a
+     * chip reading "≥ R$ NaN", which looks like the app broke rather than like a
+     * URL someone mistyped. A non-number simply gets no chip — the server-side
+     * parser ignores it too, so the chip row keeps telling the truth about what is
+     * actually filtering.
+     */
+    const num = (key: string, render: (value: number) => string) => {
+      const raw = params.get(key);
+      if (!raw) return;
+      const value = Number(raw);
+      if (Number.isFinite(value)) add(key, render(value));
+    };
+
+    const text = params.get('q')?.trim();
+    if (text) add('q', `“${text}”`);
+
+    for (const slug of selected.neighborhoods) {
+      add('neighborhood', facets.neighborhoods.find((n) => n.slug === slug)?.name ?? slug, slug);
+    }
+    for (const value of selected.sources) add('source', sourceLabel(value), value);
+    for (const value of selected.amenities) add('amenity', value, value);
+
+    num('minPrice', (v) => `≥ ${money(v)}`);
+    num('maxPrice', (v) => `≤ ${money(v)}`);
+    num('minSqm', (v) => `≥ ${v} m²`);
+    num('maxSqm', (v) => `≤ ${v} m²`);
+    num('bedrooms', (v) => `${t.filters.minBedrooms}: ${v}+`);
+    num('maxBedrooms', (v) => `${t.filters.maxBedrooms}: ${v}`);
+    num('bathrooms', (v) => `${t.filters.minBathrooms}: ${v}+`);
+    num('parking', (v) => `${t.filters.minParking}: ${v}+`);
+    num('newDays', (v) => t.filters.lastDays(v));
+    num('maxCommute', (v) => `${t.filters.maxCommute}: ≤ ${v} min`);
+    const pets = params.get('pets');
+    if (pets === 'yes' || pets === 'no') add('pets', pets === 'yes' ? t.filters.petsYes : t.filters.petsNo);
+    if (!hide.includes('rating')) {
+      // Clamped before repeating: `?minRating=9999` would otherwise build a
+      // ten-thousand-character string of stars on every render.
+      num('minRating', (v) => '★'.repeat(Math.min(Math.max(Math.round(v), 1), 5)));
+    }
+    if (!hide.includes('status')) {
+      const status = params.get('status');
+      const known = FEED_STATUSES.find((s) => s === status);
+      if (known && known !== 'ALL') add('status', t.filters.statuses[known]);
+    }
+
+    if (photosOnly) add('photos', `📷 ${t.filters.withPhotos}`);
+    if (droppedOnly) add('droppedOnly', `📉 ${t.filters.droppedOnly}`);
+    if (!hide.includes('pinned') && pinnedOnly) add('pinned', `📌 ${t.filters.pinnedOnly}`);
+    if (!hide.includes('ignorePreferences') && ignoring) add('ignorePreferences', t.filters.ignore);
+
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, selected, facets.neighborhoods, t]);
+
   const priceSteps = PRICE_STEPS[forSale ? 'SALE' : 'RENT'];
 
   /** Submits the form the control belongs to. */
@@ -280,33 +414,33 @@ export default function FeedControls({
        * screen deserve to both be visible, and this is the control people will
        * reach for most.
        */}
-      <div className="mb-3 flex w-fit gap-1 rounded-xl p-1 shadow-neu-inset-sm">
-        {(['RENT', 'SALE'] as const).map((type) => {
-          const on = (params.get('listingType') ?? facets.listingType) === type;
-          return (
-            <label
-              key={type}
-              className={clsx(
-                'cursor-pointer select-none rounded-lg px-4 py-2 text-sm font-bold transition-all duration-150 ease-neu',
-                on ? 'bg-surface text-brand-700 shadow-neu-sm' : 'text-ink-500 hover:text-ink-700',
-              )}
-            >
-              <input
-                type="radio"
-                name="listingType"
-                value={type}
-                defaultChecked={on}
-                onChange={submit}
-                className="sr-only"
-              />
-              {type === 'RENT' ? t.preferences.rent : t.preferences.buy}
-            </label>
-          );
-        })}
-      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 gap-1 rounded-xl p-1 shadow-neu-inset-sm">
+          {(['RENT', 'SALE'] as const).map((type) => {
+            const on = (params.get('listingType') ?? facets.listingType) === type;
+            return (
+              <label
+                key={type}
+                className={clsx(
+                  'cursor-pointer select-none rounded-lg px-4 py-2 text-sm font-bold transition-all duration-150 ease-neu',
+                  on ? 'bg-surface text-brand-700 shadow-neu-sm' : 'text-ink-500 hover:text-ink-700',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="listingType"
+                  value={type}
+                  defaultChecked={on}
+                  onChange={submit}
+                  className="sr-only"
+                />
+                {type === 'RENT' ? t.preferences.rent : t.preferences.buy}
+              </label>
+            );
+          })}
+        </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-[16rem] flex-1 gap-2">
+        <div className="flex min-w-[12rem] flex-1 gap-2">
           <input
             name="q"
             className="input"
@@ -318,22 +452,6 @@ export default function FeedControls({
             {t.filters.search}
           </button>
         </div>
-
-        {!hide.includes('status') && (
-          <select
-            name="status"
-            className="input !w-auto"
-            aria-label={t.filters.statusLabel}
-            defaultValue={params.get('status') ?? 'ALL'}
-            onChange={submit}
-          >
-            {FEED_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {t.filters.statuses[s]}
-              </option>
-            ))}
-          </select>
-        )}
 
         <select
           name="sort"
@@ -349,27 +467,87 @@ export default function FeedControls({
           ))}
         </select>
 
-        {!hide.includes('pinned') && toggle('pinned', pinnedOnly, `📌 ${t.filters.pinnedOnly}`)}
-        {!hide.includes('ignorePreferences') && toggle('ignorePreferences', ignoring, t.filters.ignore)}
-
         <button
           type="button"
           aria-expanded={expanded}
-          onClick={() => setExpanded((v) => !v)}
+          aria-controls="feed-filter-panel"
+          onClick={togglePanel}
           className={clsx(
-            'rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 ease-neu',
-            expanded || activeExtras > 0 ? 'pressed-on' : 'pressed-off',
+            'shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 ease-neu',
+            expanded ? 'pressed-on' : 'pressed-off',
           )}
         >
-          {expanded ? t.filters.fewer : t.filters.more}
-          {activeExtras > 0 && <span className="ml-1.5 font-black">{activeExtras}</span>}
+          {t.filters.more}
+          {activeExtras > 0 && <span className="ml-1.5 font-black text-brand-700">{activeExtras}</span>}
         </button>
       </div>
+
+      {/**
+       * What is filtering right now, and how to stop it.
+       *
+       * Links rather than buttons: each one is a real URL with that filter
+       * dropped, so they work with JavaScript off, can be middle-clicked, and cost
+       * no state. The row only exists when something is set — an empty strip of
+       * chrome above the results is exactly the clutter this is meant to remove.
+       */}
+      {activeChips.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {activeChips.map((chipItem) => (
+            <a
+              key={chipItem.id}
+              href={chipItem.href}
+              className="group flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-xs font-semibold text-ink-700 shadow-neu-sm transition-all duration-150 ease-neu hover:text-ink-900 active:shadow-neu-inset-sm"
+              title={t.filters.removeFilter(chipItem.label)}
+            >
+              <span className="max-w-[14rem] truncate">{chipItem.label}</span>
+              <span aria-hidden className="text-sm leading-none text-ink-400 group-hover:text-danger">
+                ×
+              </span>
+              <span className="sr-only">{t.filters.removeFilter(chipItem.label)}</span>
+            </a>
+          ))}
+
+          {activeChips.length > 1 && (
+            <a href={basePath} className="px-2 py-1.5 text-xs font-semibold text-ink-500 underline hover:text-danger">
+              {t.filters.clear}
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Hidden while collapsed rather than unmounted: a filter that is set but
           out of sight must still be submitted, or collapsing the row would
           silently clear it. */}
-      <div className={clsx('well mt-4 space-y-5 p-4', !expanded && 'hidden')}>
+      <div id="feed-filter-panel" className={clsx('well mt-4 space-y-5 p-4', !expanded && 'hidden')}>
+        {/* --- Scope: which slice of the feed, before narrowing it ---
+            These three used to sit in the always-visible toolbar. They are the
+            least-touched controls of the set — a saved profile is the point, so
+            "ignore preferences" is a debugging affordance more than a filter — and
+            they were costing a permanent row. Set state still shows as a chip. */}
+        {(!hide.includes('status') || !hide.includes('pinned') || !hide.includes('ignorePreferences')) && (
+          <div className="flex flex-wrap items-end gap-3">
+            {!hide.includes('status') && (
+              <label className="min-w-0">
+                <span className="label !mb-1.5">{t.filters.statusLabel}</span>
+                <select
+                  name="status"
+                  className="input !w-auto !py-2"
+                  defaultValue={params.get('status') ?? 'ALL'}
+                  onChange={submit}
+                >
+                  {FEED_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {t.filters.statuses[s]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {!hide.includes('pinned') && toggle('pinned', pinnedOnly, `📌 ${t.filters.pinnedOnly}`)}
+            {!hide.includes('ignorePreferences') && toggle('ignorePreferences', ignoring, t.filters.ignore)}
+          </div>
+        )}
+
         {/* --- Neighborhoods: the filter people actually want two of at once ---
             role="group" + aria-label rather than fieldset/legend: a <legend> must
             be the first child of its <fieldset>, which rules out putting the
@@ -444,14 +622,14 @@ export default function FeedControls({
             generic "no min". On a feed of 40 listings between R$ 1.900 and
             R$ 4.100, that is the difference between guessing a number and being
             told the range you are filtering inside. */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {numberField('minPrice', t.filters.minPrice, bound(facets.priceRange, 'min'), priceSteps, 'R$')}
           {numberField('maxPrice', t.filters.maxPrice, bound(facets.priceRange, 'max'), priceSteps, 'R$')}
           {numberField('minSqm', t.filters.minSqm, bound(facets.sqmRange, 'min'), SQM_STEPS, 'm²')}
           {numberField('maxSqm', t.filters.maxSqm, bound(facets.sqmRange, 'max'), SQM_STEPS, 'm²')}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {select(
             'bedrooms',
             t.filters.minBedrooms,

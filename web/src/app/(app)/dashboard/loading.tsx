@@ -12,7 +12,7 @@ export default function DashboardLoading() {
 
       <div className="skeleton mb-6 h-[74px]" />
 
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {Array.from({ length: 8 }, (_, i) => (
           <div key={i} className="card overflow-hidden p-3">
             <div className="skeleton aspect-[4/3] w-full" />

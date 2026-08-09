@@ -240,7 +240,7 @@ export default function PropertyMap({
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="space-y-3">
         <div className="card overflow-hidden p-2">
           <div ref={container} className="h-[65vh] min-h-[26rem] w-full overflow-hidden rounded-xl bg-surface-sunken">

@@ -72,7 +72,7 @@ export default function VisitScheduler({ propertyId, compact = false }: { proper
 
   return (
     <form onSubmit={submit} className="well space-y-3 p-4">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label>
           <span className="label">{t.visits.when}</span>
           <input

@@ -272,7 +272,7 @@ export default function PreferencesForm({
       <div className="card card-p">
         <h2 className="mb-4 text-sm font-semibold">{t.preferences.location}</h2>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2">
             <label className="label" htmlFor="city">
               {t.preferences.city}
@@ -406,7 +406,7 @@ export default function PreferencesForm({
           </label>
         )}
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           {budgetField(budgetKeys.min, t.preferences.minimum, t.preferences.noMinimum)}
           {budgetField(
             budgetKeys.max,
@@ -460,7 +460,7 @@ export default function PreferencesForm({
       <div className="card card-p">
         <h2 className="mb-4 text-sm font-semibold">{t.preferences.specs}</h2>
 
-        <div className="grid gap-5 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
           {numberField(t.preferences.bedrooms, 'minBedrooms')}
           {numberField(t.preferences.bathrooms, 'minBathrooms', 4)}
           {numberField(t.preferences.parking, 'minParkingSpots', 4)}
@@ -516,7 +516,7 @@ export default function PreferencesForm({
         <h2 className="mb-1 text-sm font-semibold">{t.preferences.commute}</h2>
         <p className="mb-4 text-xs text-ink-500">{t.preferences.commuteHint}</p>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2">
             <label className="label" htmlFor="commuteAddress">
               {t.preferences.commuteAddress}

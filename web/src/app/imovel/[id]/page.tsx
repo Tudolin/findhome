@@ -83,7 +83,7 @@ export default async function PublicListingPage({ params }: { params: Params }) 
           {t.public.backToList}
         </Link>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <div className="space-y-6">
             <PhotoCarousel images={displayImages(listing)} alt={listing.title} />
 

@@ -127,7 +127,7 @@ export default async function PropertyPage({
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="space-y-6">
           {/* Mirrored copies where they exist, and for a closed ad *only* those —
               see galleryFor in lib/media. Resolved here, in a server component, so

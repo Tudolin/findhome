@@ -93,7 +93,7 @@ export default function PartyPanel({ activeParty }: { activeParty: ActiveParty |
   const isLastMember = activeParty?.members.length === 1;
 
   return (
-    <div id="party" className="grid gap-5 md:grid-cols-2">
+    <div id="party" className="grid grid-cols-1 gap-5 md:grid-cols-2">
       {activeParty && (
         <div className="card card-p md:col-span-2">
           <div className="flex flex-wrap items-start justify-between gap-4">

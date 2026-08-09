@@ -2,7 +2,7 @@ export default function CoOpLoading() {
   return (
     <div className="space-y-8">
       <div className="skeleton h-9 w-56" />
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <div className="skeleton h-36 md:col-span-2" />
         <div className="skeleton h-40" />
         <div className="skeleton h-40" />

@@ -136,7 +136,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           </p>
         </div>
       ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {feed.items.map((property) => (
             <PropertyCard key={property.id} property={property as unknown as UiProperty} workspace={workspace} />
           ))}
