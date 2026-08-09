@@ -59,7 +59,12 @@ export function dedupe(values: string[]): string[] {
 }
 
 export type StoredPhotos = { images: string[]; photosFetchedAt: Date | null };
-export type PhotoChange = { images?: string[]; photoCount?: number; photosFetchedAt?: Date | null };
+export type PhotoChange = {
+  images?: string[];
+  photoCount?: number;
+  photosFetchedAt?: Date | null;
+  photoAttempts?: number;
+};
 
 /**
  * Decides what happens to a listing's photos when it is re-scraped.
@@ -95,5 +100,10 @@ export function photoUpdate(incoming: string[], existing: StoredPhotos): PhotoCh
     // Re-queued for the backfill: the listing really changed, so its page may now
     // have more than it did the last time we opened it.
     photosFetchedAt: null,
+    // And with a fresh attempt budget. A listing that has actually changed is not
+    // the same listing that used up its retries — without this, an ad that had
+    // already exhausted PHOTOS_MAX_ATTEMPTS would get exactly one look at its new
+    // gallery and then be written off again.
+    photoAttempts: 0,
   };
 }

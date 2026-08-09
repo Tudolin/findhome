@@ -395,8 +395,9 @@ async function main(): Promise<void> {
   console.log(line);
   console.log(
     `photos:   backfill ${PHOTOS_STATUS.enabled ? 'ON' : 'OFF'} · up to ${PHOTOS_STATUS.maxPerRun}/run · ` +
-      (PHOTOS_STATUS.minImages > 0
-        ? `only listings with < ${PHOTOS_STATUS.minImages} photo(s)`
+      (PHOTOS_STATUS.target > 0
+        ? `aiming for ${PHOTOS_STATUS.target}+ per listing (up to ${PHOTOS_STATUS.maxAttempts} attempt(s), ` +
+          `${PHOTOS_STATUS.retryHours}h apart)`
         : 'every listing, once') +
       ` · store ${PHOTOS_STATUS.maxPerListing > 0 ? `up to ${PHOTOS_STATUS.maxPerListing}` : 'all'} per listing`,
   );

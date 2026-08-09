@@ -282,6 +282,25 @@ export default function PropertyCard({ property, workspace }: { property: UiProp
           )}
         </ul>
 
+        {/**
+         * The advertiser's own words, clamped to three lines.
+         *
+         * The specs above are the same four numbers on every card, which is what
+         * makes a feed of flats blur together — the description is the only part
+         * that says "sun all afternoon" or "third floor, no lift". Three lines is
+         * enough to tell those apart and short enough not to turn the grid into a
+         * wall of text; the rest is on the listing page.
+         *
+         * Whitespace is collapsed rather than preserved: portal descriptions are
+         * full of blank lines and ASCII rules, and `whitespace-pre-wrap` here made
+         * a card three screens tall out of one advertiser's formatting.
+         */}
+        {property.description && (
+          <p className="line-clamp-3 text-[11px] leading-relaxed text-ink-500">
+            {property.description.replace(/\s+/g, ' ').trim()}
+          </p>
+        )}
+
         {/* Side-by-side pros & cons — party consensus first. */}
         {(property.partyScore.allPros.length > 0 || property.partyScore.allCons.length > 0) && (
           <div className="flex flex-wrap gap-1.5">

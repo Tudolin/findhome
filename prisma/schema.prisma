@@ -376,6 +376,15 @@ model Property {
   /// How many photos the listing's own page yielded. 0 means "asked, found
   /// nothing", which is different from "never asked" (photosFetchedAt is null).
   photoCount      Int       @default(0) @map("photo_count")
+  /// How many times the gallery pass has opened this listing's page.
+  ///
+  /// `photosFetchedAt` alone could only express "visited once, ever", so a
+  /// listing that came back with two photos was stamped and never looked at
+  /// again — even though a lazy carousel that failed to finish is the single most
+  /// common reason for a short gallery, and retrying often fixes it. This counter
+  /// is what lets the pass chase PHOTOS_TARGET across runs while still giving up:
+  /// an ad that genuinely has two photos must not be reopened forever.
+  photoAttempts   Int       @default(0) @map("photo_attempts")
 
   /**
    * Groups ads for the same physical flat.
@@ -426,8 +435,9 @@ model Property {
   @@index([citySlug, neighborhoodSlug])
   @@index([totalPrice])
   @@index([createdAt])
-  // Drives the gallery backfill's "needs photos, never tried" scan.
-  @@index([photosFetchedAt, photoCount])
+  // Drives the gallery backfill's scan. `photoAttempts` joins the index because
+  // the retry branch filters on all three columns at once.
+  @@index([photosFetchedAt, photoCount, photoAttempts])
   // Grouping ads for the same flat, and the clustering pass's own scan.
   @@index([clusterKey])
   @@index([commuteCheckedAt])

@@ -21,6 +21,12 @@ export type UiInteraction = {
 export type UiProperty = {
   id: string;
   title: string;
+  /**
+   * The advertiser's own prose. Optional because three of the six portals do not
+   * put it on a search card — it only arrives once the gallery pass opens the
+   * listing's own page (see scraper/src/photos.ts).
+   */
+  description?: string | null;
   address: string;
   neighborhood: string;
   city: string;

@@ -612,9 +612,28 @@ slide in an `onload` handler stops dead when the first image fails. Stubbing let
 the lazy chain run to the end at zero bandwidth, and it is the single biggest
 reason galleries used to come back short.
 
-Nothing is capped by default: `PHOTOS_MAX_PER_LISTING=0` stores every photo found,
-and `PHOTOS_MIN_IMAGES=0` means every listing gets its page opened once regardless
-of what the search already gave us.
+Nothing is capped by default: `PHOTOS_MAX_PER_LISTING=0` stores every photo found.
+
+The pass aims for `PHOTOS_TARGET` photos per listing (5 by default). A listing that
+comes back short is revisited on a later run rather than stamped once and
+abandoned — a lazy carousel that failed to finish is the usual reason a gallery is
+short, and a retry usually fixes it. After `PHOTOS_MAX_ATTEMPTS` visits it gives up,
+so an ad that genuinely has two photos is not reopened forever.
+
+**The target is not a guarantee.** If the advertiser published two photos, nothing
+here can produce five. What the pass does promise is to keep trying within its
+budget and to say, at the end of every run, how many listings are still short:
+
+```
+12 active listing(s) still under 5 photo(s). Some of those are ads that were
+published with fewer — retries cannot invent photos the advertiser never posted.
+```
+
+The same pass now also picks up the **description** while the listing's page is
+open, which costs one extra `evaluate` and no extra navigation. It matters because
+the search responses are stingy with prose in a way they are not with numbers: OLX
+publishes no description field at all on its cards, Chaves na Mão exposes only the
+title, and ZAP and ImovelWeb send a blurb truncated with an ellipsis.
 
 ```bash
 make photos                   # work through the backlog now
@@ -626,7 +645,9 @@ make doctor                   # what each portal returns, and why
 ```ini
 PHOTOS_ENABLED=true         # reuses the scrape's Chromium, so it is on by default
 PHOTOS_MAX_PER_RUN=200      # one page load each — this is the budget
-PHOTOS_MIN_IMAGES=0         # 0 = no gate; N skips listings that already have N
+PHOTOS_TARGET=5             # aim for 5+ per listing; 0 = one visit each, ever
+PHOTOS_MAX_ATTEMPTS=3       # give up after this many visits to one listing
+PHOTOS_RETRY_HOURS=24       # cooldown before retrying a short gallery
 PHOTOS_MAX_PER_LISTING=0    # 0 = store every photo found
 PHOTOS_DELAY_MS=900
 PHOTOS_SETTLE_MS=1200       # how long to let a lazy carousel finish
@@ -1476,7 +1497,9 @@ Everything is set in `.env`. Full annotated list in
 | `ALERT_MAX_AGE_HOURS` | `48` | Older listings are marked seen rather than announced |
 | `PHOTOS_ENABLED` | `true` | Open listing pages to collect the rest of the gallery |
 | `PHOTOS_MAX_PER_RUN` | `200` | One page load each; this is the budget per run |
-| `PHOTOS_MIN_IMAGES` | `0` | `0` = visit every listing once; `N` skips those with N photos |
+| `PHOTOS_TARGET` | `5` | Photos to aim for per listing; short ones are revisited. `0` = one visit each |
+| `PHOTOS_MAX_ATTEMPTS` | `3` | Visits to one listing before giving up on the target |
+| `PHOTOS_RETRY_HOURS` | `24` | Cooldown before retrying a listing that came back short |
 | `PHOTOS_MAX_PER_LISTING` | `0` | `0` = store every photo found |
 | `PHOTOS_DELAY_MS` | `900` | Politeness delay between listing pages |
 | `PHOTOS_SETTLE_MS` | `1200` | How long to let a lazy carousel finish after scrolling |

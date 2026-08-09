@@ -4,6 +4,7 @@ import { BrowserPool, sleep } from './browser.js';
 import { markGone } from './cleanup.js';
 import { config } from './config.js';
 import { prisma } from './db.js';
+import { pickDescription } from './description.js';
 import { logger } from './logger.js';
 import { syncPhotoRows } from './media.js';
 // One definition of "same photo", shared with persist.ts. It used to be a copy in
@@ -73,14 +74,42 @@ const ENABLED = bool(process.env.PHOTOS_ENABLED, true);
 /** Listings per run. The pass costs one page load each, so this is the budget. */
 const MAX_PER_RUN = Math.max(0, int(process.env.PHOTOS_MAX_PER_RUN, 200));
 /**
- * Skip listings that already have at least this many photos.
+ * How many photos a listing should end up with.
  *
- * **0 (the default) means no gate: every listing gets its page opened once.**
- * The old default of 3 was the second reason galleries stayed short — a listing
- * whose search response happened to carry three photos was never visited, so its
- * other twenty were never found.
+ * Replaces PHOTOS_MIN_IMAGES, which expressed the same `photo_count < N` test but
+ * could only ever apply it to a listing's *first* visit. That was the bug: a
+ * lazy carousel that failed to finish left two photos behind, the row got
+ * stamped, and it was never opened again — so the gallery stayed short forever
+ * even though a retry usually fixes it.
+ *
+ * This is a target, not a guarantee, and the difference is worth stating plainly:
+ * **if the advertiser published two photos, no amount of scraping produces five.**
+ * What the pass can do is keep trying until the target is met or the attempt
+ * budget runs out, and report how many listings are still short — which it does
+ * at the end of every run.
+ *
+ * 0 disables the retry branch entirely: every listing is visited exactly once,
+ * the pre-existing behaviour.
  */
-const MIN_IMAGES = Math.max(0, int(process.env.PHOTOS_MIN_IMAGES, 0));
+const TARGET = Math.max(0, int(process.env.PHOTOS_TARGET, 5));
+
+/**
+ * How many times one listing may have its page opened before the pass gives up.
+ *
+ * Without a ceiling, every ad that genuinely has one photo would be reopened on
+ * every run until it went off the market — turning a bounded backfill into a
+ * permanent, pointless load on the portals.
+ */
+const MAX_ATTEMPTS = Math.max(1, int(process.env.PHOTOS_MAX_ATTEMPTS, 3));
+
+/**
+ * How long to wait before retrying a listing that came back short.
+ *
+ * Immediately re-requesting the page that just gave two photos would mostly
+ * reproduce the same result against the same CDN state. A day's gap also spreads
+ * the retries across runs instead of spending a whole budget on them at once.
+ */
+const RETRY_AFTER_MS = Math.max(1, int(process.env.PHOTOS_RETRY_HOURS, 24)) * 3_600_000;
 /** Politeness delay between listing pages. */
 const DELAY_MS = Math.max(200, int(process.env.PHOTOS_DELAY_MS, 900));
 const NAV_TIMEOUT_MS = Math.max(10_000, int(process.env.PHOTOS_TIMEOUT_MS, 30_000));
@@ -270,6 +299,78 @@ function readGallery(): string[] {
 }
 
 /**
+ * The advertiser's own prose, from the listing's own page.
+ *
+ * Runs in the browser alongside `readGallery`, on a page that is already open —
+ * so it costs one extra `evaluate` and no navigation at all.
+ *
+ * It is needed because the search responses are stingy with prose in a way they
+ * are not with numbers: OLX's card has no description field whatsoever (the
+ * parser hard-codes `null`), Chaves na Mão only exposes the title, and ImovelWeb
+ * and ZAP publish a truncated blurb ending in an ellipsis. The listing page has
+ * the whole thing.
+ *
+ * Returns candidates rather than one answer; picking happens in Node, where it is
+ * testable and where a bad guess is not baked into the page context.
+ */
+function readDescription(): string[] {
+  type El = { getAttribute: (name: string) => string | null; textContent: string | null };
+  const scope = globalThis as unknown as {
+    document: { querySelectorAll: (selector: string) => ArrayLike<El> };
+  };
+
+  const out: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim().length > 0) out.push(value);
+  };
+
+  const each = (selector: string, read: (el: El) => void) => {
+    const nodes = scope.document.querySelectorAll(selector);
+    for (let i = 0; i < nodes.length; i += 1) read(nodes[i]);
+  };
+
+  // --- 1. schema.org ---------------------------------------------------------
+  // Only the `description` key, unlike readGallery's collect-every-string walk:
+  // prose has no URL-shaped test to filter it by afterwards, so taking any string
+  // would return the page's entire JSON as description candidates.
+  const walk = (node: unknown, depth: number) => {
+    if (depth > 8 || node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1);
+      return;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (typeof value === 'string') {
+        if (/^(description|descricao|descrição|longDescription|fullDescription|body|text)$/i.test(key)) push(value);
+      } else {
+        walk(value, depth + 1);
+      }
+    }
+  };
+
+  each('script[type="application/ld+json"], script[type="application/json"]', (el) => {
+    try {
+      walk(JSON.parse(el.textContent ?? 'null'), 0);
+    } catch {
+      // Not JSON.
+    }
+  });
+
+  // --- 2. The DOM ------------------------------------------------------------
+  // Before Open Graph on purpose: og:description is frequently the portal's own
+  // marketing line ("Encontre o imóvel ideal na OLX!") rather than this ad's text.
+  each(
+    '[data-testid*="description" i], [data-qa*="DESCRIPTION" i], [class*="description" i], [id*="description" i], [itemprop="description"]',
+    (el) => push(el.textContent),
+  );
+
+  // --- 3. Open Graph, last ---------------------------------------------------
+  each('meta[property="og:description"], meta[name="description"]', (el) => push(el.getAttribute('content')));
+
+  return out;
+}
+
+/**
  * Nudges a lazy carousel into loading.
  *
  * Most of these galleries render their remaining photos only once the strip is
@@ -320,7 +421,9 @@ type Candidate = {
   source: PropertySource;
   sourceUrl: string;
   images: string[];
+  description: string | null;
 };
+
 
 /** Merge: whatever the search gave us first, then everything new, order kept. */
 function merge(existing: string[], found: string[]): string[] {
@@ -337,7 +440,7 @@ function merge(existing: string[], found: string[]): string[] {
 
 /** What the listing page told us, beyond the photos. */
 type GalleryOutcome =
-  | { kind: 'ok'; images: string[] }
+  | { kind: 'ok'; images: string[]; description: string | null }
   /** The ad is down: 404/410. Direct evidence, not a guess from absence. */
   | { kind: 'gone'; status: number }
   /** Refused or unreachable. Says nothing about whether the ad still exists. */
@@ -375,6 +478,10 @@ async function fetchGallery(page: Page, candidate: Candidate): Promise<GalleryOu
   await sleep(SETTLE_MS);
 
   const raw = await page.evaluate(readGallery).catch(() => [] as string[]);
+  // Same open page, one more evaluate. A failure here must not cost the gallery,
+  // hence the separate catch rather than one Promise.all that rejects together.
+  const prose = await page.evaluate(readDescription).catch(() => [] as string[]);
+
   const found: string[] = [];
   const seen = new Set<string>();
 
@@ -389,7 +496,7 @@ async function fetchGallery(page: Page, candidate: Candidate): Promise<GalleryOu
     found.push(upgraded);
   }
 
-  return { kind: 'ok', images: found };
+  return { kind: 'ok', images: found, description: pickDescription(prose, candidate.description) };
 }
 
 /**
@@ -402,25 +509,53 @@ async function fetchGallery(page: Page, candidate: Candidate): Promise<GalleryOu
 export async function backfillPhotos(browsers: BrowserPool): Promise<void> {
   if (!ENABLED || MAX_PER_RUN === 0) return;
 
-  const where: Prisma.PropertyWhereInput = {
-    active: true,
-    // Never asked before. The stamp is what stops a listing whose page genuinely
-    // has one photo from being re-opened on every single run.
-    photosFetchedAt: null,
-    source: { notIn: NO_LISTING_PAGE },
-    // MIN_IMAGES defaults to 0, i.e. no gate — see the constant.
-    ...(MIN_IMAGES > 0 ? { photoCount: { lt: MIN_IMAGES } } : {}),
+  /** Never had its page opened. Always first in line. */
+  const neverTried: Prisma.PropertyWhereInput = { photosFetchedAt: null };
+
+  /**
+   * Visited, came back under target, and has both attempts and a cooldown left.
+   *
+   * This branch is the whole reason PHOTOS_TARGET exists. Note it does not
+   * pretend the target is reachable — it just keeps asking until the attempt
+   * budget is spent, after which a two-photo ad is accepted as a two-photo ad.
+   */
+  const shortOfTarget: Prisma.PropertyWhereInput = {
+    photosFetchedAt: { lt: new Date(Date.now() - RETRY_AFTER_MS) },
+    photoCount: { lt: TARGET },
+    photoAttempts: { lt: MAX_ATTEMPTS },
   };
 
-  const [pending, remaining] = await Promise.all([
+  const where: Prisma.PropertyWhereInput = {
+    active: true,
+    source: { notIn: NO_LISTING_PAGE },
+    OR: TARGET > 0 ? [neverTried, shortOfTarget] : [neverTried],
+  };
+
+  const [pending, remaining, short] = await Promise.all([
     prisma.property.findMany({
       where,
-      // Newest first: those are the ones somebody is about to open.
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        // Never-tried first — nulls sort last in Postgres by default, and those
+        // are precisely the listings with no gallery at all.
+        { photosFetchedAt: { sort: 'asc', nulls: 'first' } },
+        // Then the emptiest, then the newest: a listing with one photo gains more
+        // from a retry than one with four, and recent ads are the ones somebody is
+        // about to open.
+        { photoCount: 'asc' },
+        { createdAt: 'desc' },
+      ],
       take: MAX_PER_RUN,
-      select: { id: true, source: true, sourceUrl: true, images: true },
+      select: { id: true, source: true, sourceUrl: true, images: true, description: true },
     }),
     prisma.property.count({ where }),
+    // Everything still under target, including the rows that have exhausted their
+    // attempts. Reported at the end so "minimum 5 photos" is a measured number
+    // rather than an assumption — see the note on TARGET.
+    TARGET > 0
+      ? prisma.property.count({
+          where: { active: true, source: { notIn: NO_LISTING_PAGE }, photoCount: { lt: TARGET } },
+        })
+      : 0,
   ]);
 
   if (pending.length === 0) return;
@@ -447,6 +582,9 @@ export async function backfillPhotos(browsers: BrowserPool): Promise<void> {
   let empty = 0;
   let unreachable = 0;
   let gone = 0;
+  let described = 0;
+  /** Of the listings visited this run, how many reached TARGET. */
+  let metTarget = 0;
   const bySource = new Map<string, { listings: number; photos: number }>();
 
   try {
@@ -458,7 +596,7 @@ export async function backfillPhotos(browsers: BrowserPool): Promise<void> {
         // are untouched, so the cover photo is not lost.
         await prisma.property.update({
           where: { id: candidate.id },
-          data: { photosFetchedAt: new Date() },
+          data: { photosFetchedAt: new Date(), photoAttempts: { increment: 1 } },
         });
 
         if (outcome.kind === 'gone') {
@@ -481,7 +619,16 @@ export async function backfillPhotos(browsers: BrowserPool): Promise<void> {
 
       await prisma.property.update({
         where: { id: candidate.id },
-        data: { images, photoCount: images.length, photosFetchedAt: new Date() },
+        data: {
+          images,
+          photoCount: images.length,
+          photosFetchedAt: new Date(),
+          photoAttempts: { increment: 1 },
+          // Omitted, not set to null, when the page had nothing better — this
+          // column already holds whatever the search response carried, and a
+          // retry that finds no prose must not erase it.
+          ...(outcome.description ? { description: outcome.description } : {}),
+        },
       });
       // The gallery changed, so the mirror index has to follow it.
       await syncPhotoRows(candidate.id, images).catch(() => undefined);
@@ -497,6 +644,8 @@ export async function backfillPhotos(browsers: BrowserPool): Promise<void> {
       } else {
         empty += 1;
       }
+      if (outcome.description) described += 1;
+      if (TARGET > 0 && images.length >= TARGET) metTarget += 1;
 
       await sleep(DELAY_MS);
     }
@@ -509,6 +658,28 @@ export async function backfillPhotos(browsers: BrowserPool): Promise<void> {
       `${empty} had nothing more to give, ${gone} ad(s) are down, ` +
       `${unreachable} page(s) could not be read`,
   );
+
+  if (described > 0) log.info(`descriptions: ${described} listing(s) gained or improved theirs`);
+
+  /**
+   * The honest version of "every listing has at least five photos".
+   *
+   * `short` was measured before this run, so subtracting the listings that just
+   * reached the target gives the current figure. Some of that remainder is
+   * permanent — an ad with two photos has two photos — and saying so beats a log
+   * line that implies the next run will fix it.
+   */
+  if (TARGET > 0) {
+    const stillShort = Math.max(0, short - metTarget);
+    if (stillShort > 0) {
+      log.info(
+        `${stillShort} active listing(s) still under ${TARGET} photo(s). Some of those are ads that ` +
+          `were published with fewer — retries cannot invent photos the advertiser never posted.`,
+      );
+    } else {
+      log.info(`every active listing has at least ${TARGET} photo(s)`);
+    }
+  }
 
   // Per-source averages, because "photos are still missing" is almost always one
   // portal rather than all of them, and this is the line that says which.
@@ -543,7 +714,11 @@ export async function resetPhotoStamps(options: { below?: number } = {}): Promis
       source: { notIn: NO_LISTING_PAGE },
       ...(options.below !== undefined ? { photoCount: { lt: options.below } } : {}),
     },
-    data: { photosFetchedAt: null },
+    // The attempt counter is cleared too. A reset means "try these again", and
+    // leaving the count spent would give each row exactly one visit before the
+    // retry branch declared it exhausted — which is the opposite of what someone
+    // running a reset after a parser fix is asking for.
+    data: { photosFetchedAt: null, photoAttempts: 0 },
   });
   return count;
 }
@@ -552,7 +727,9 @@ export async function resetPhotoStamps(options: { below?: number } = {}): Promis
 export const PHOTOS_STATUS = {
   enabled: ENABLED,
   maxPerRun: MAX_PER_RUN,
-  minImages: MIN_IMAGES,
+  target: TARGET,
+  maxAttempts: MAX_ATTEMPTS,
+  retryHours: RETRY_AFTER_MS / 3_600_000,
   maxPerListing: MAX_PHOTOS,
   delayMs: DELAY_MS,
   skipsSources: NO_LISTING_PAGE,

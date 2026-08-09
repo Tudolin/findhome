@@ -36,11 +36,27 @@ export default function ListingImage({
   eager?: boolean;
   fallback?: string;
 }) {
-  const [failed, setFailed] = useState(false);
+  /**
+   * WHICH urls failed — not a single boolean.
+   *
+   * The boolean version was a real bug, and a sneaky one. PhotoCarousel renders a
+   * single `<ListingImage>` for the main photo and only swaps its `src` prop, so
+   * React keeps the same component instance for the entire gallery. Nothing reset
+   * the flag when `src` changed, so one dead URL anywhere in the album latched
+   * `failed = true` and *every* subsequent photo rendered the placeholder —
+   * including ones that had already displayed correctly a moment earlier. Paging
+   * back through the carousel was the fastest way to hit it, which is exactly the
+   * "todas as imagens somem" report.
+   *
+   * Keyed by URL, the state finally means what it claims: *this* photo is dead.
+   * Moving to a working one clears itself, and coming back to a dead one shows
+   * the placeholder immediately instead of flashing a broken image again.
+   */
+  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
 
   // Portals expire their photo URLs, so a listing that was fine last week can
   // come back with a dead image. A quiet placeholder beats a broken-image icon.
-  if (!src || failed) {
+  if (!src || failed.has(src)) {
     return (
       <div className={clsx('flex items-center justify-center bg-surface-sunken text-xs text-ink-400', className)}>
         {fallback}
@@ -55,7 +71,7 @@ export default function ListingImage({
       alt={alt}
       loading={eager ? 'eager' : 'lazy'}
       referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
+      onError={() => setFailed((dead) => new Set(dead).add(src))}
       className={className}
     />
   );
