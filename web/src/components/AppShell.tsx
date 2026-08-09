@@ -522,7 +522,22 @@ export default function AppShell({
       )}
 
       {/* ---------------- Content ---------------- */}
-      <div className={clsx(ready && 'transition-[padding] duration-200 ease-neu', collapsed ? 'lg:pl-[76px]' : 'lg:pl-64')}>
+      {/**
+       * `overflow-x-clip`, not `overflow-x-hidden`.
+       *
+       * A backstop so no single wide child can ever make the whole page scroll
+       * sideways — the failure that makes a phone unusable rather than merely
+       * ugly. `clip` does this WITHOUT creating a scroll container, which
+       * `hidden` would: that would break every `position: sticky` inside,
+       * including the filter toolbar and the listing's action bar.
+       */}
+      <div
+        className={clsx(
+          'overflow-x-clip',
+          ready && 'transition-[padding] duration-200 ease-neu',
+          collapsed ? 'lg:pl-[76px]' : 'lg:pl-64',
+        )}
+      >
         {/* `pb-24` clears the tab bar on a phone; the rail needs no such room. */}
         <main className="mx-auto max-w-7xl px-4 pb-24 pt-6 lg:pb-10 lg:pt-8">{children}</main>
       </div>

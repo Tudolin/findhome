@@ -572,6 +572,14 @@ export const en = {
     stepVisitBody: 'It lands in your calendar, and in theirs.',
   },
 
+  photos: {
+    open: 'Open the photo full screen',
+    previous: 'Previous photo',
+    next: 'Next photo',
+    show: (n: number) => `Show photo ${n}`,
+    swipeHint: 'swipe',
+  },
+
   share: {
     share: 'Share',
     copied: 'Copied ✓',

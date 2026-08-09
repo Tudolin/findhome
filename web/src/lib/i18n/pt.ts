@@ -575,6 +575,14 @@ export const pt: Dict = {
     stepVisitBody: 'Ela cai no seu calendário, e no da outra pessoa.',
   },
 
+  photos: {
+    open: 'Abrir a foto em tela cheia',
+    previous: 'Foto anterior',
+    next: 'Próxima foto',
+    show: (n: number) => `Mostrar a foto ${n}`,
+    swipeHint: 'arraste',
+  },
+
   share: {
     share: 'Compartilhar',
     copied: 'Copiado ✓',

@@ -128,6 +128,27 @@
   html {
     -webkit-text-size-adjust: 100%;
   }
+
+  /**
+   * Images can never contribute more width than their box.
+   *
+   * Tailwind's preflight already sets `max-width: 100%`, but that alone does not
+   * stop a 4000px photo stretching the page: inside a grid or flex track sized
+   * `auto`, the image's INTRINSIC width becomes the item's min-content
+   * contribution, the track grows past the viewport, and the whole page scrolls
+   * sideways. On a phone that makes the listing unusable — which is exactly the
+   * bug reported on listings whose portal published very large photos.
+   *
+   * `min-width: 0` is the part that actually fixes it: it tells the layout that
+   * the image is allowed to be narrower than it naturally wants to be.
+   */
+  img,
+  video,
+  canvas,
+  svg {
+    @apply block h-auto max-w-full;
+    min-width: 0;
+  }
   body {
     /* Neumorphism needs the page and its cards to share one background — the
        depth comes from the shadows, not from a colour change. */
