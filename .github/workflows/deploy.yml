@@ -1,8 +1,8 @@
 name: Deploy
-# Runs automatically on every push to main, and can also be triggered manually
-# with a specific image tag via workflow_dispatch.
+
+# OPT-IN. Does nothing until you register a self-hosted runner on the server.
 #
-# ## Why this needs a self-hosted runner
+# ## Why this is opt-in and not the default
 #
 # The server accepts no inbound connections — it is behind a Cloudflare Tunnel or
 # a Tailscale tailnet on purpose (DEPLOY-PUBLICO.md). GitHub therefore cannot
@@ -10,51 +10,102 @@ name: Deploy
 # through the thing the deployment guide spends nine steps closing.
 #
 # A self-hosted runner inverts the direction: it runs ON the server and polls
-# GitHub over HTTPS, so nothing needs to be opened. That works — at a cost worth
-# stating plainly before you enable it:
+# GitHub over HTTPS, so nothing has to be opened. The cost, stated plainly:
 #
-#   * The runner executes code from this repository on your machine. On a public
-#     repo, that means anything a `pull_request_target` or a merged PR can reach.
-#     Only use a self-hosted runner on a PRIVATE repository.
-#   * It runs as whatever user installed it, with that user's Docker access —
-#     which is root-equivalent.
+#   * The runner executes repository code on your machine, as the user that
+#     installed it, with that user's Docker access — which is root-equivalent.
+#     So anyone who can push to this repo can run anything on the server.
+#
+# On a PRIVATE repository with one or two people, that is not much of a change:
+# whoever can push already has SSH. On a PUBLIC repository it is a different
+# proposition entirely — a fork's pull request must never reach this runner.
+# Do not enable it there.
+#
+# `deploy/update.sh` from cron gets you the same outcome with none of this, at
+# the price of updating on a schedule rather than on a merge.
 #
 # ## To enable
 #
 #   1. Settings → Actions → Runners → New self-hosted runner, on the server.
 #   2. Give it the label `findhome-server`.
 #   3. Run it as a service:  sudo ./svc.sh install && sudo ./svc.sh start
-#   4. Push to main, or trigger manually via Actions → Deploy → Run workflow.
+#   4. Actions → Deploy → Run workflow.
+
 on:
-  push:
-    branches:
-      - main
+  # Fires when Release FINISHES, not when main is pushed.
+  #
+  # That ordering is the whole reason this is a `workflow_run` and not a `push`.
+  # A push trigger would start deploying while the images were still being built,
+  # so the server would pull whatever `latest` pointed at ten minutes ago — the
+  # previous version — and report success. The bug would be invisible: a green
+  # deploy that shipped nothing.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [main]
+
   workflow_dispatch:
     inputs:
       tag:
         description: 'Image tag to deploy (latest, or a version like v1.4.0)'
         required: false
         default: 'latest'
+
 concurrency:
   group: deploy
   cancel-in-progress: false
+
 jobs:
   deploy:
     # No runner with this label = the job queues and never starts, which is the
     # correct behaviour for something nobody has opted into.
     runs-on: [self-hosted, findhome-server]
     timeout-minutes: 20
+
+    # A failed Release published no images, so there is nothing to deploy — and
+    # deploying anyway would pull the PREVIOUS `latest` over a working server for
+    # no reason. `workflow_run` fires on failure too, hence the guard.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    permissions:
+      contents: read
+      packages: read
+
     steps:
+      # So the pull works without a personal access token stored on the machine.
+      # The runner's own GITHUB_TOKEN is scoped to this repository and rotates on
+      # its own, which is strictly better than a long-lived PAT in root's
+      # ~/.docker/config.json.
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       # The working copy on the server, not a fresh checkout: .env lives there and
       # must never be in the repository.
       - name: Update and restart
+        env:
+          TAG: ${{ inputs.tag || 'latest' }}
         run: |
           cd "${FINDHOME_DIR:-$HOME/findhome}"
           git fetch --all --prune
+          # Hard reset is safe here: .env, backups/ and the Docker volumes are all
+          # gitignored or outside the tree. Anything else edited on the server by
+          # hand is *meant* to be overwritten by what was reviewed and merged.
           git reset --hard origin/main
-          ./deploy/update.sh --tag "${{ inputs.tag || 'latest' }}"
+          chmod +x deploy/*.sh
+          ./deploy/update.sh --tag "$TAG"
+
       - name: What is running
         if: always()
         run: |
           cd "${FINDHOME_DIR:-$HOME/findhome}"
           docker compose ps
+
+      # A deploy that quietly half-worked is worse than one that failed loudly.
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          cd "${FINDHOME_DIR:-$HOME/findhome}"
+          echo "::error::deploy failed — see the logs below. The previous containers may still be up."
+          docker compose logs --tail=200 web migrate || true
